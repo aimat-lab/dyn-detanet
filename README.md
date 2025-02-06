@@ -10,6 +10,10 @@ conda install conda-forge::nequip
 
 conda install conda-forge::wandb 
 
+conda install conda-forge::torch-scatter 
+
+conda install esri::torch-cluster 
+
 cd allegro
 
 pip install .
