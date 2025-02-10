@@ -1,5 +1,6 @@
 import csv
 import json
+import os
 
 def transform_polarizabilities_auto_blocks(
     input_mol_csv_path: str,
@@ -127,9 +128,14 @@ def transform_polarizabilities_auto_blocks(
 
 
 if __name__ == "__main__":
+
+    current_dir = os.path.abspath(os.path.dirname(__file__))
+    parent_dir = os.path.dirname(current_dir)
+    data_dir = os.path.join(parent_dir, 'data')
+
     # Example usage
     transform_polarizabilities_auto_blocks(
-        input_mol_csv_path = "/media/maria/work_space/capsule-3259363/data/HarvardOPV_40.csv",
-        input_csv_path="/media/maria/work_space/capsule-3259363/data/all_polarizabilities.csv",
-        output_csv_path="polarizabilities.csv"
+        input_mol_csv_path = data_dir + "/HarvardOPV_40.csv",
+        input_csv_path= data_dir + "/all_polarizabilities.csv",
+        output_csv_path= data_dir + "/polarizabilities.csv"
     )

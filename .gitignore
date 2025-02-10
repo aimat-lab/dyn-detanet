@@ -1,7 +1,10 @@
 /QM9/
 /data/
-
+/__pycache__/
+*.__pycache__*
+*.pyc
 *.pt
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -53,3 +56,4 @@ coverage.xml
 
 # Sphinx documentation
 docs/_build/
+code/__pycache__/utils.cpython-310.pyc
