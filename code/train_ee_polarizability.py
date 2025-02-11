@@ -1,12 +1,17 @@
 import csv
 import json
+import os
 
-with open("polarizabilities.csv", "r", encoding="utf-8") as infile:
+current_dir = os.path.abspath(os.path.dirname(__file__))
+parent_dir = os.path.dirname(current_dir)
+data_dir = os.path.join(parent_dir, 'data')
+
+with open(data_dir + "/polarizabilities.csv", "r", encoding="utf-8") as infile:
     reader = csv.reader(infile)
     frequencies = next(reader)  # read column names
     pol_type = next(reader)
-    # find the index(es) of the columns with the matrix
-    # e.g. idx = header.index("ee_symmetric_freq1_1.5500eV")
+
+    print("pol_type", pol_type)
     
     for row in reader:
         # Suppose the matrix is in column 1 (just as an example):

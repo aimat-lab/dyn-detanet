@@ -2,6 +2,7 @@ import copy
 import os.path as osp
 import csv
 import utils as ut
+import pandas as pd
 
 import torch.nn as nn
 import torch.nn.functional as F
@@ -18,38 +19,84 @@ import torch_geometric
 import logging
 import os
 from pathlib import Path
+import json 
 
 from detanet_model import *
+from preprocess_data import load_polarizabilities, save_dataset_to_csv
+
+device = torch.device("cpu")
+
+model = DynDetaNet(num_features=128,
+                act='swish',
+                maxl=3,
+                num_block=3,
+                radial_type='trainable_bessel',
+                num_radial=32,
+                attention_head=8,
+                rc=5.0,
+                dropout=0.0,
+                use_cutoff=False,
+                max_atomic_number=34,
+                atom_ref=None,
+                scale=1.0,
+                scalar_outsize=4, # 2 in polar model
+                irreps_out='2e',
+                summation=True,
+                norm=False,
+                out_type='2_tensor',
+                grad_type=None,
+                device=device)
+
+print(model.train())
+
+current_dir = os.path.abspath(os.path.dirname(__file__))
+parent_dir = os.path.dirname(current_dir)
+data_dir = os.path.join(parent_dir, 'data')
+
+csv_path = data_dir + "/ee_polarizabilities.csv"
 
 logging.basicConfig(
-    filename='/pfs/work7/workspace/scratch/pf1892-ws/logs/training_detaNet.log',
+    filename=parent_dir + "/train_dyn_detanet.log", # '/pfs/work7/workspace/scratch/pf1892-ws/logs/training_detaNet.log',
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logging.info(f"torch.cuda.is_available() {torch.cuda.is_available()}")
 
-notebook_dir = Path(os.getcwd())
-parent_dir = os.path.dirname(notebook_dir)
-data_dir = os.path.join(parent_dir, 'data')
-
-csv_path = data_dir + "/polarizabilities.csv"
-
-# Open the CSV file and process it
 dataset = []
 with open(csv_path, newline='', encoding='utf-8') as csvfile:
     csv_reader = csv.reader(csvfile, delimiter=',')
     
     # Read the header to identify column indices
     header = next(csv_reader)
-    smiles_idx = header.index("SMILES")
-    homo_idx = header.index("HOMO(eV)")
-    lumo_idx = header.index("LUMO(eV)")
+    smiles_idx = header.index("smiles")
+    frequency_idx = header.index("frequency")
+    matrix_real_idx = header.index("matrix_real")
+    matrix_imag_idx = header.index("matrix_imag")
     
     # Read each row
     for row in csv_reader:
         smiles = row[smiles_idx]
-        homo = torch.tensor([float(row[homo_idx])], dtype=torch.float) 
-        lumo = torch.tensor([float(row[lumo_idx])], dtype=torch.float32)
+        freq = row[frequency_idx]
+        matrix_real_str = row[matrix_real_idx]
+        matrix_imag_str = row[matrix_imag_idx]
+        try:
+            matrix_real = json.loads(matrix_real_str)
+        except json.JSONDecodeError:
+            # skip malformed JSON
+            print("Warning: Could not parse real part of matrix")
+            continue
+        
+        try:
+            matrix_imag = json.loads(matrix_imag_str)
+        except json.JSONDecodeError:
+            # skip malformed JSON
+            print("Warning: Could not parse imaginary part of matrix")
+            continue
+
+        matrix_real = torch.tensor([matrix_real], dtype=torch.float32) 
+        matrix_imag = torch.tensor([matrix_imag], dtype=torch.float32)
+        polarizability = torch.stack([matrix_real, matrix_imag], dim=0)  # shape: (2,3,3)
+
         # Convert SMILES to molecular graph
         graph_data = ut.smiles_to_graph(smiles)
         if graph_data is None:
@@ -61,11 +108,13 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
         data_entry = Data(
             pos=pos.to(torch.float32),    # Atomic positions
             z=torch.LongTensor(z),        # Atomic numbers
-            y=torch.tensor([homo, lumo], dtype=torch.float32),  # Polarizability tensor (target)
+            freq=torch.tensor(float(freq), dtype=torch.float32),
+            y=polarizability,  # Polarizability tensor (target)
         )
         
         dataset.append(data_entry)
 
+print(dataset[0])
 
 train_datasets=[]
 val_datasets=[]
@@ -77,37 +126,15 @@ for i in range(len(dataset)):
         
 len(train_datasets),len(val_datasets)
 
-
 '''Using torch_Geometric.dataloader.DataLoader Converts a dataset into a batch of 64 molecules of training data.'''
 batches=16
 trainloader=DataLoader(train_datasets,batch_size=batches,shuffle=True)
 valloader=DataLoader(val_datasets,batch_size=batches,shuffle=True)
 
 
-device = torch.device("cpu")
 
-'''After loading the dataset, we train a model using NPA charge as an example.
- 	Firstly, construct an untrained model:'''
-model=DetaNet(num_features=128,
-                 act='swish',
-                 maxl=3,
-                 num_block=3,
-                 radial_type='trainable_bessel',
-                 num_radial=32,
-                 attention_head=8,
-                 rc=5.0,
-                 dropout=0.0,
-                 use_cutoff=False,
-                 max_atomic_number=34,
-                 atom_ref=None,
-                 scale=None,
-                 scalar_outsize=2,
-                 irreps_out=None,
-                 summation=False,
-                 norm=False,
-                 out_type='scalar',
-                 grad_type=None ,
-                 device=device)
+
+
 
 model.train()
 
@@ -147,12 +174,16 @@ class Trainer:
                                      batch=batch.batch.to(self.device))
                 #print("out", out.shape)
                 graph_out = global_mean_pool(out, batch.batch)  # Shape: [batch_size, d]
+                print("graph_out shape", graph_out.shape)
+                print("graph_out", graph_out)
 
-                # print("graph_out", graph_out.shape)
+                outs_re, outs_im = torch.split(graph_out, 6, dim=-1)
+                print("outs_re", outs_re)
+                print("outs_im", outs_im)
 
                 target = batch[targ].to(self.device)
 
-                #print("target" , target.shape)
+                print("target" , target.shape)
                 loss = self.loss_function(graph_out.reshape(target.shape),target)
                 loss.backward()
                 self.optimizer.step()
