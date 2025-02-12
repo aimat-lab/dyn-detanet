@@ -17,7 +17,6 @@ conda install conda-forge::torch-scatter
 
 conda install esri::torch-cluster 
 
-cd allegro
+pip install rdkit
 
-pip install .
-
+conda install pandas

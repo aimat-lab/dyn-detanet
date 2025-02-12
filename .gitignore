@@ -4,7 +4,7 @@
 *.__pycache__*
 *.pyc
 *.pt
-
+run_configs
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -56,4 +56,6 @@ coverage.xml
 
 # Sphinx documentation
 docs/_build/
-code/__pycache__/utils.cpython-310.pyc
+code/__pycache__/
+/code/__pycache__/
+**/__pycache__/**
