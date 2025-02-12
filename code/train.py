@@ -20,11 +20,28 @@ import logging
 import os
 from pathlib import Path
 import json 
-import tqdm
 
 from detanet_model import *
 from preprocess_data import load_polarizabilities, save_dataset_to_csv
 
+import wandb
+
+batch_size = 128
+epochs = 100
+lr=5e-4
+
+wandb.init(
+    # set the wandb project where this run will be logged
+    project="dynDetanet",
+
+    # track hyperparameters and run metadata
+    config={
+    "learning_rate": lr,
+    "architecture": "GNN",
+    "dataset": "HarvardOPV",
+    "epochs": epochs,
+    }
+)
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -50,6 +67,7 @@ model = DynDetaNet(num_features=128,
                     device=device)
 model.train()
 model.to(device) 
+wandb.watch(model, log="all")
 
 '''Next, define the trainer and the parameters used for training.'''
 class Trainer:
@@ -87,6 +105,7 @@ class Trainer:
                 loss = self.loss_function(out.reshape(target.shape),target)
                 loss.backward()
                 self.optimizer.step()
+                wandb.log({"train_loss": loss, "epoch": i})
                 if (self.step%val_per_train==0) and (self.val_data is not None):
                     val_batch = next(val_datas)
                     val_target=val_batch[targ].to(self.device).reshape(-1)
@@ -97,6 +116,9 @@ class Trainer:
                     val_loss = self.loss_function(val_out.reshape(val_target.shape), val_target.to(self.device)).item()
                     val_mae = l1loss(val_out.reshape(val_target.shape), val_target.to(self.device)).item()
                     val_R2 = R2(val_out.reshape(val_target.shape), val_target.to(self.device)).item()
+                    wandb.log({"val_loss": val_loss, "epoch": i})
+                    wandb.log({"val_mae": val_mae, "epoch": i})
+                    wandb.log({"val_R2": val_R2, "epoch": i})
 
                     if self.step % print_per_epoch==0:
                         logging.info('Epoch[{}/{}],loss:{:.8f},val_loss:{:.8f},val_mae:{:.8f},val_R2:{:.8f}'
@@ -134,7 +156,7 @@ data_dir = os.path.join(parent_dir, 'data')
 csv_path = data_dir + "/ee_polarizabilities.csv"
 
 logging.basicConfig(
-    filename=parent_dir + "/logging/train_dyn_detanet.log", # '/pfs/work7/workspace/scratch/pf1892-ws/logs/training_detaNet.log',
+    filename=parent_dir + "/log/train_dyn_detanet.log", # '/pfs/work7/workspace/scratch/pf1892-ws/logs/training_detaNet.log',
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
@@ -223,8 +245,6 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
         )
         
         dataset.append(data_entry)
-        if len(dataset) == 143:
-            break
 
 train_datasets=[]
 val_datasets=[]
@@ -235,12 +255,12 @@ for i in range(len(dataset)):
         train_datasets.append(dataset[i])
 
 '''Using torch_Geometric.dataloader.DataLoader Converts a dataset into a batch of 64 molecules of training data.'''
-batches=16
-trainloader=DataLoader(train_datasets,batch_size=batches,shuffle=True)
-valloader=DataLoader(val_datasets,batch_size=batches,shuffle=True)
+
+trainloader=DataLoader(train_datasets,batch_size=batch_size,shuffle=True)
+valloader=DataLoader(val_datasets,batch_size=batch_size,shuffle=True)
 
 '''Finally, using the trainer, training 20 times from a 5e-4 learning rate'''
-trainer=Trainer(model,train_loader=trainloader,val_loader=valloader,loss_function=l2loss,lr=5e-4,weight_decay=0,optimizer='AdamW')
-trainer.train(num_train=50,targ='y')
+trainer=Trainer(model,train_loader=trainloader,val_loader=valloader,loss_function=l2loss,lr=lr,weight_decay=0,optimizer='AdamW')
+trainer.train(num_train=epochs,targ='y')
 
 torch.save(model.state_dict(), current_dir + '/trained_param/ee_polarizabilities.pth')
