@@ -138,7 +138,8 @@ class DynDetaNet(nn.Module):
         self.irreps_sh=irrs_sh[1:]
         self.Embedding=Embedding(num_features=num_features,act=act,device=device,max_atomic_number=max_atomic_number)
         self.Radial=Radial_Basis(radial_type=radial_type,num_radial=num_radial,use_cutoff=use_cutoff)
-        self.FreqEmbedding=FrequencyEmbedding(embed_dim=max_atomic_number)
+
+        self.FreqEmbedding=FrequencyEmbedding(embed_dim=num_features)
         blocks = []
         # interaction layers
         for _ in range(num_block):
@@ -165,6 +166,9 @@ class DynDetaNet(nn.Module):
         self.mass=atom_masses.to(device)
         #Module for conversion from irrep tensor to Cartesian tensor
         if out_type == '2_tensor':
+            self.ct = io.CartesianTensor('ij=ji')
+
+        if out_type == 'complex_2_tensor':
             self.ct = io.CartesianTensor('ij=ji')
 
         elif out_type == '3_tensor':
@@ -229,6 +233,23 @@ class DynDetaNet(nn.Module):
         ta=o3.spherical_harmonics(l='1o',x=ra,normalize=False)*sa
         tb=o3.spherical_harmonics(l='3o',x=ra,normalize=False)*sb
         return self.ct.to_cartesian(outt+torch.concat(tensors=(ta,tb),dim=-1))
+
+    def cal_complex_p_tensor(self, z, pos, batch, outs, outt):
+        #    sa_re, sb_re => real-part scalars
+        #    sa_im, sb_im => imaginary-part scalars
+        sa_re, sb_re, sa_im, sb_im = torch.split(outs, 1, dim=-1)
+        ra = self.centroid_coordinate(z=z, pos=pos, batch=batch)
+        sh_2e = o3.spherical_harmonics(l='2e', x=ra, normalize=False)
+        outt_re, outt_im = torch.split(outt, 5, dim=-1)
+        ta_re = sh_2e * sa_re
+        real_vec = torch.cat([sb_re, outt_re + ta_re], dim=-1)  # shape [..., 6]
+        ta_im = sh_2e * sa_im
+        imag_vec = torch.cat([sb_im, outt_im + ta_im], dim=-1)  # shape [..., 6]
+        #    The first 6 for the real matrix, next 6 for the imaginary matrix
+        complex_12 = torch.cat([real_vec, imag_vec], dim=-1)  # shape [..., 12]
+
+        return complex_12
+
 
     def grad_hess_ij(self, energy, posj, posi, create_graph=True):
         '''Calculating the inter-atomic part of hessian matrices.Find the cross-derivative for the coordinates
@@ -310,15 +331,17 @@ class DynDetaNet(nn.Module):
         if edge_index is None:
             edge_index=radius_graph(x=pos,r=self.rc,batch=batch)
 
+
+        freq_emb_batch = self.FreqEmbedding(freq)  # shape [batch_size, embed_dim]
+        freq_emb_atoms = freq_emb_batch[batch]     # shape [n_atoms, embed_dim]
+
         #Embedding of atomic types into scalar features (via one-hot nuclear and electronic features)
-        S=self.Embedding(z)
+        S=self.Embedding(z, freq_emb_atoms)
         T=torch.zeros(size=(S.shape[0],self.vdim),device=S.device,dtype=S.dtype)
         i,j=edge_index
 
-        freq_emb = self.FreqEmbedding(freq)  # shape [batch_size, embed_dim]
-        F = freq_emb[batch]     # shape [n_atoms, embed_dim]
-        print("frequency emmbedding shape" , F.shape)
-        SF = torch.cat([S, F], dim=-1)  # shape [n_atoms, base_scalar_dim + embed_dim]
+        
+        # does not work: SF = torch.cat([S, F], dim=-1)  # shape [n_atoms, base_scalar_dim + embed_dim]
 
         #If it is necessary to obtain the atomic part of the hessian, the 2 sets of coordinates
         # of the generated i and j atoms need to be recorded.
@@ -342,7 +365,7 @@ class DynDetaNet(nn.Module):
 
         #via interaction layers
         for block in self.blocks:
-            SF,T=block(S=SF,T=T,sh=sh,rbf=rbf,index=edge_index)
+            S,T=block(S=S,T=T,sh=sh,rbf=rbf,index=edge_index)
 
         #Output of irrep tensor from equivariant linear layers
         if self.irreps_out is not None:
@@ -350,7 +373,7 @@ class DynDetaNet(nn.Module):
 
         # Output of scalar from invariant linear layers
         if self.scalar_outsize!=0:
-            outs=self.sout(SF)
+            outs=self.sout(S)
 
         #via output function.
         if self.out_type=='scalar':
@@ -369,7 +392,9 @@ class DynDetaNet(nn.Module):
             out=self.cal_3_p_tensor(z=z,pos=pos,batch=batch,outs=outs,outt=outt)
 
         elif self.out_type=='latent':
-            out=SF,T
+            out=S,T
+        elif self.out_type == 'complex_2_tensor':
+            out = self.cal_complex_p_tensor(z=z,pos=pos,batch=batch,outs=outs,outt=outt) 
         else:
             out=outs,outt
 
