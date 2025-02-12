@@ -68,9 +68,17 @@ class Embedding(nn.Module):
         self.nuclare_emb.reset_parameters()
         nn.init.xavier_uniform_(self.elec_emb.weight)
 
-    def forward(self,z):
+    def forward(self, z, freq_emb_atoms=None):
         '''
         The initial invariant feature of an atom consists of a mixture of nuclear one-hot and electronic features
         S0=ls(ln(O(z))+lq(Q(z)))
         '''
-        return self.act(self.ls(self.nuclare_emb(z)+self.elec_emb(self.elec[z,:])))
+        base_emb = self.nuclare_emb(z) + self.elec_emb(self.elec[z,:])
+
+        if freq_emb_atoms is not None:
+            #print("shape base_emb: ", base_emb.shape)
+            #print("shape freq_emb_atoms", freq_emb_atoms.shape)
+            base_emb = base_emb + freq_emb_atoms
+            #print("shape base_emb after summation: ", base_emb.shape)
+        out = self.ls(base_emb)
+        return self.act(out)
