@@ -306,7 +306,7 @@ class DynDetaNet(nn.Module):
     def forward(self,
                 z,
                 pos,
-                freq,
+                freq=None,
                 edge_index=None,
                 batch=None):
         '''
@@ -332,11 +332,15 @@ class DynDetaNet(nn.Module):
             edge_index=radius_graph(x=pos,r=self.rc,batch=batch)
 
 
-        freq_emb_batch = self.FreqEmbedding(freq)  # shape [batch_size, embed_dim]
-        freq_emb_atoms = freq_emb_batch[batch]     # shape [n_atoms, embed_dim]
-
-        #Embedding of atomic types into scalar features (via one-hot nuclear and electronic features)
-        S=self.Embedding(z, freq_emb_atoms)
+        if freq is not None:
+            freq_emb_batch = self.FreqEmbedding(freq)  # shape [batch_size, embed_dim]
+            freq_emb_atoms = freq_emb_batch[batch]     # shape [n_atoms, embed_dim]
+            #Embedding of atomic types into scalar features (via one-hot nuclear and electronic features)
+            S=self.Embedding(z, freq_emb_atoms)
+        else:
+            #Embedding of atomic types into scalar features (via one-hot nuclear and electronic features)
+            S=self.Embedding(z)
+        
         T=torch.zeros(size=(S.shape[0],self.vdim),device=S.device,dtype=S.dtype)
         i,j=edge_index
 

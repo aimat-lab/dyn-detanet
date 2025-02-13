@@ -1,8 +1,12 @@
+
 import copy
 import os.path as osp
 import csv
 import utils as ut
 import pandas as pd
+import torch
+from torch.nn.functional import one_hot
+import numpy as np
 
 import torch.nn as nn
 import torch.nn.functional as F
@@ -55,7 +59,7 @@ model = DynDetaNet(num_features=128,
                     rc=5.0,
                     dropout=0.0,
                     use_cutoff=False,
-                    max_atomic_number=34,
+                    max_atomic_number=9,
                     atom_ref=None,
                     scale=1.0,
                     scalar_outsize=2, # 2,#4, 
@@ -99,19 +103,18 @@ class Trainer:
                 self.step=self.step+1
                 torch.cuda.empty_cache()
                 self.optimizer.zero_grad()
-                out = self.model(pos=batch.pos.to(self.device), z=batch.z.to(self.device), freq=batch.freq.to(self.device),
-                                 batch=batch.batch.to(self.device))
-                print("out", out)
+                out = self.model(pos=batch.pos.to(self.device), z=batch.z.to(self.device), batch=batch.batch.to(self.device))
+                #print("out", out)
                 target = batch[targ].to(self.device)
 
-                print("target," , target)
+                #print("target," , target)
                 loss = self.loss_function(out.reshape(target.shape),target)
                 loss.backward()
                 self.optimizer.step()
                 wandb.log({"train_loss": loss, "epoch": i})
                 if (self.step%val_per_train==0) and (self.val_data is not None):
                     val_batch = next(val_datas)
-                    val_out = self.model(pos=val_batch.pos.to(self.device), z=val_batch.z.to(self.device), freq=batch.freq.to(self.device), batch=val_batch.batch.to(self.device))
+                    val_out = self.model(pos=val_batch.pos.to(self.device), z=val_batch.z.to(self.device), batch=val_batch.batch.to(self.device))
                     val_target=val_batch[targ].to(self.device).reshape(-1)
 
                     # Ensure the shapes match
@@ -155,8 +158,6 @@ current_dir = os.path.abspath(os.path.dirname(__file__))
 parent_dir = os.path.dirname(current_dir)
 data_dir = os.path.join(parent_dir, 'data')
 
-csv_path = data_dir + "/ee_polarizabilities.csv"
-
 logging.basicConfig(
     filename=parent_dir + "/log/train_dyn_detanet.log", # '/pfs/work7/workspace/scratch/pf1892-ws/logs/training_detaNet.log',
     level=logging.INFO,
@@ -165,56 +166,37 @@ logging.basicConfig(
 logging.info(f"torch.cuda.is_available() {torch.cuda.is_available()}")
 
 
-dataset = []
-with open(csv_path, newline='', encoding='utf-8') as csvfile:
-    csv_reader = csv.reader(csvfile, delimiter=',')
-    
-    # Read the header to identify column indices
-    header = next(csv_reader)
-    smiles_idx = header.index("smiles")
-    frequency_idx = header.index("frequency")
-    matrix_real_idx = header.index("matrix_real")
-    matrix_imag_idx = header.index("matrix_imag")
-    
-    # Read each row
-    for row in csv_reader:
-        smiles = row[smiles_idx]
-        freq = row[frequency_idx]
-        matrix_real_str = row[matrix_real_idx]
-        matrix_imag_str = row[matrix_imag_idx]
-        try:
-            freq_val = float(freq)
-        except ValueError:
-            continue
+# Function to generate one-hot encodings
+def generate_onehot(z, max_atomic_number):
+    indices = z - 1  # Shift atomic numbers to 0-based index
+    return one_hot(indices, num_classes=max_atomic_number).float()
 
-        # Parse JSON for real matrix
-        try:
-            real_3x3 = json.loads(matrix_real_str)  # shape expected [3,3]
-        except json.JSONDecodeError:
-            print("Warning: Could not parse real part of matrix")
-            continue
+def get_dataset(dataset):
+    # Maximum atomic number in the dataset
+    max_atomic_number = 9
 
+    new_dataset = []
 
-        # Convert to torch Tensors (shape [3,3])
-        real_mat = torch.tensor(real_3x3, dtype=torch.float32)
+    for molecule in dataset:
+        pos = molecule['pos']
+        z = molecule['z']
+        polar = molecule['polar'].squeeze()
 
-        # Convert SMILES to molecular graph
-        graph_data = ut.smiles_to_graph(smiles)
-        if graph_data is None:
-            continue  # Skip invalid molecules
-        
-        z, pos = graph_data
-        
-        # Create a PyTorch Geometric Data object
-        data_entry = Data(
+        # Create the dataset entry
+        data_entry = torch_geometric.data.Data(
             pos=pos.to(torch.float32),    # Atomic positions
             z=torch.LongTensor(z),        # Atomic numbers
-            freq=torch.tensor(float(freq), dtype=torch.float32),
-            y=real_mat,  # Polarizability tensor (target)
+            y=torch.tensor(polar, dtype=torch.float32)        # polar.to(torch.float32)  # Polarizability tensor (target)
         )
-        
-        dataset.append(data_entry)
 
+        new_dataset.append(data_entry)
+    
+    return new_dataset
+
+
+dataset = torch.load("../data/qm9s.pt")
+print(dataset[0])
+dataset = get_dataset(dataset)
 
 train_datasets=[]
 val_datasets=[]
@@ -233,4 +215,4 @@ valloader=DataLoader(val_datasets,batch_size=batch_size,shuffle=True)
 trainer=Trainer(model,train_loader=trainloader,val_loader=valloader,loss_function=l2loss,lr=lr,weight_decay=0,optimizer='AdamW')
 trainer.train(num_train=epochs,targ='y')
 
-torch.save(model.state_dict(), current_dir + '/trained_param/ee_polarizabilities_real_part.pth')
+torch.save(model.state_dict(), current_dir + '/trained_param/qm9s_polar.pth')

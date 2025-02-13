@@ -16,8 +16,7 @@ class FrequencyEmbedding(nn.Module):
     """
     def __init__(self, freq_in_dim=1, hidden_dim=16, embed_dim=32):
         super().__init__()
-        self.linear1 = nn.Linear(freq_in_dim, hidden_dim)
-        self.linear2 = nn.Linear(hidden_dim, embed_dim)
+        self.linear1 = nn.Linear(freq_in_dim, embed_dim)
 
 
     def forward(self, freq):
@@ -31,5 +30,4 @@ class FrequencyEmbedding(nn.Module):
 
         x = self.linear1(freq)    # shape: [batch_size, hidden_dim]
         x = F.silu(x)             # use SiLU (Swish) activation, or any other
-        x = self.linear2(x)       # shape: [batch_size, embed_dim]
         return x
