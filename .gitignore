@@ -5,8 +5,13 @@
 *.pyc
 *.pt
 run_configs
+<<<<<<< HEAD
 /wandb/
 */wandb/
+=======
+/wandb
+wandb
+>>>>>>> 15cff38 (Add wandb to gitignore.)
 /wandb/*
 
 # Byte-compiled / optimized / DLL files
