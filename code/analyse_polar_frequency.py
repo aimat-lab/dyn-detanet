@@ -222,7 +222,7 @@ def plot_matrix_elements_vs_freq(data_dict, max_mols=2):
 
     plt.tight_layout()
     plt.savefig("Matrix_Elements_vs_Frequency")
-    #plt.show()
+    plt.show()
 
 
 
@@ -294,7 +294,7 @@ def plot_matrix_elements_vs_freq_real_vs_imag(data_dict, max_mols=2):
 
     plt.tight_layout()
     plt.savefig("Matrix_Elements_vs_Frequency_real_vs_imag.png")
-    #plt.show()
+    plt.show()
 
 
 
@@ -312,7 +312,7 @@ if __name__ == "__main__":
     plot_trace_vs_frequency_real_vs_imag(data_dict, max_mols=1)
     plot_trace_vs_frequency(data_dict, value='real', max_mols=3)
     plot_trace_vs_frequency(data_dict, value='imag', max_mols=3)
-    plot_matrix_elements_vs_freq(data_dict, max_mols=1)
+    plot_matrix_elements_vs_freq(data_dict, max_mols=3)
 
     # If you want to attempt all molecules (lots of lines):
     # plot_trace_vs_frequency(data_dict, max_mols=None)
