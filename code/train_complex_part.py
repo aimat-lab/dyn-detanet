@@ -1,7 +1,7 @@
 import copy
 import os.path as osp
 import csv
-import utils as ut
+import code.utils.utils as ut
 import pandas as pd
 
 import torch.nn as nn
@@ -22,7 +22,7 @@ from pathlib import Path
 import json 
 
 from detanet_model import *
-from preprocess_data import load_polarizabilities, save_dataset_to_csv
+from code.data_processing.preprocess_data import load_polarizabilities, save_dataset_to_csv
 
 import wandb
 
