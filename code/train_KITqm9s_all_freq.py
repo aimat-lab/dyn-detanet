@@ -27,14 +27,13 @@ import json
 from detanet_model import *
 import wandb
 
-batch_size = 32
+batch_size = 64
 epochs = 30
-lr=5e-4
-freq_num = 12
+lr=5e-5
 
 wandb.init(
     # set the wandb project where this run will be logged
-    project="Detanet-complex",
+    project="Detanet-all-freq",
 
     # track hyperparameters and run metadata
     config={
@@ -93,7 +92,6 @@ print("qm9s is loaded.")
 qm9_dict = {mol.number: mol for mol in qm9s}
 
 dataset = []
-
 frequencies = []
 
 with open(csv_path, newline='', encoding='utf-8') as csvfile:
@@ -138,10 +136,6 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
         except ValueError:
             continue
 
-        # Keep only frequency=0.0
-        if freq_val != frequencies[freq_num]:
-            continue
-
         mol = None
         # Now you can look up any 'idx' in constant time
         if idx in qm9_dict:
@@ -180,7 +174,6 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
             y=y,  # Polarizability tensor (target)
         )
         dataset.append(data_entry)
-    print("Frequency: ", frequencies[freq_num])
 
 print("Length of dataset: ", len(dataset))
 ex1 = dataset[0]
