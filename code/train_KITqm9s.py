@@ -2,7 +2,7 @@ import copy
 import os
 import os.path as osp
 import csv
-import utils as ut
+import util as ut
 import pandas as pd
 
 import torch.nn as nn
@@ -34,7 +34,7 @@ freq_num = 12
 
 wandb.init(
     # set the wandb project where this run will be logged
-    project="Detanet-complex",
+    project="Detanet-frequency",
 
     # track hyperparameters and run metadata
     config={

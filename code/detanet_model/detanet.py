@@ -165,6 +165,9 @@ class DetaNet(nn.Module):
         #Module for conversion from irrep tensor to Cartesian tensor
         if out_type == '2_tensor':
             self.ct = io.CartesianTensor('ij=ji')
+        
+        if out_type == 'complex_2_tensor':
+            self.ct = io.CartesianTensor('ij=ji')
 
         elif out_type == '3_tensor':
             self.ct = io.CartesianTensor("ijk=jik=ikj")
@@ -206,6 +209,21 @@ class DetaNet(nn.Module):
         ra=self.centroid_coordinate(z=z,pos=pos,batch=batch)
         ta=o3.spherical_harmonics(l=self.irreps_out,x=ra,normalize=False)*sa
         return self.ct.to_cartesian(torch.concat(tensors=(sb,outt+ta),dim=-1))
+    
+
+    def cal_complex_p_tensor(self, z, pos, batch, outs, outt, freq=None):
+        sa_re, sb_re, sa_im, sb_im = torch.split(outs, 1, dim=-1)
+        ra = self.centroid_coordinate(z=z, pos=pos, batch=batch)
+
+         # results in an traceless representation that depends on each atom's position vector, multiply with learned scale
+        ta_re = o3.spherical_harmonics(l="2e", x=ra, normalize=False) * sa_re
+        ta_im = o3.spherical_harmonics(l="2e", x=ra, normalize=False) * sa_im
+
+        outt_re, outt_im = torch.split(outt, 5, dim=-1)
+        re = self.ct.to_cartesian(torch.concat(tensors=(sb_re, outt_re + ta_re), dim=-1)) # shape [3,3]
+        im = self.ct.to_cartesian(torch.concat(tensors=(sb_im, outt_im + ta_im), dim=-1)) # shape [3,3]
+        out = torch.cat([re, im], dim=-1) # out shape [6,3]
+        return out
 
     def cal_R_sq(self,z,pos,batch,outs):
         '''
@@ -352,6 +370,9 @@ class DetaNet(nn.Module):
 
         elif self.out_type=='2_tensor':
             out=self.cal_p_tensor(z=z,pos=pos,batch=batch,outs=outs,outt=outt)
+            
+        elif self.out_type == 'complex_2_tensor':
+            out = self.cal_complex_p_tensor(z=z,pos=pos,batch=batch,outs=outs,outt=outt) 
 
         elif self.out_type=='R2':
             out=self.cal_R_sq(z=z,pos=pos,batch=batch,outs=outs)
