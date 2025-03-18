@@ -118,6 +118,9 @@ class DetaNet(nn.Module):
         """
         super(DetaNet,self).__init__()
         assert num_features%attention_head==0,'attention head must be divisible by the number of features'
+        num_features = num_features + attention_head
+        self.attention_head = attention_head
+        
         self.scale=scale
         self.ref=atom_ref
         self.norm=norm
@@ -136,7 +139,8 @@ class DetaNet(nn.Module):
         irrs_sh=o3.Irreps.spherical_harmonics(lmax=maxl, p=-1)
         # Removal of scalars with l=0
         self.irreps_sh=irrs_sh[1:]
-        self.Embedding=Embedding(num_features=num_features,act=act,device=device,max_atomic_number=max_atomic_number)
+        #self.Embedding=Embedding(num_features=num_features,act=act,device=device,max_atomic_number=max_atomic_number)
+        self.Embedding=Embedding(num_features=num_features-attention_head,act=act,device=device,max_atomic_number=max_atomic_number)        
         self.Radial=Radial_Basis(radial_type=radial_type,num_radial=num_radial,use_cutoff=use_cutoff)
         blocks = []
         # interaction layers
@@ -302,6 +306,7 @@ class DetaNet(nn.Module):
     def forward(self,
                 z,
                 pos,
+                freq,
                 edge_index=None,
                 batch=None):
         '''
@@ -326,6 +331,14 @@ class DetaNet(nn.Module):
 
         #Embedding of atomic types into scalar features (via one-hot nuclear and electronic features)
         S=self.Embedding(z)
+
+        # Add frequency embedding
+        if freq is not None and batch is not None:
+            freq_per_atom = freq[batch]
+            freq_per_atom = freq_per_atom.unsqueeze(-1)
+            freq_broadcast = freq_per_atom.repeat(1, self.attention_head)
+            S = torch.cat([S, freq_broadcast], dim=-1)
+
         T=torch.zeros(size=(S.shape[0],self.vdim),device=S.device,dtype=S.dtype)
         i,j=edge_index
 
