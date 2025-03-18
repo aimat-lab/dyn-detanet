@@ -26,15 +26,18 @@ import json
 
 from detanet_model import *
 import wandb
+import random
+
 
 batch_size = 64
-epochs = 30
+epochs = 5
 lr=5e-5
+num_freqs=30
 
 wandb.init(
     # set the wandb project where this run will be logged
-    project="Detanet-all-freq",
-
+    project="Detanet-freq-learn",
+    name=f"All_freqs_bs{batch_size}", #f'Freq_[0:{num_freqs}]',
     # track hyperparameters and run metadata
     config={
     "learning_rate": lr,
@@ -112,6 +115,12 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
 if not frequencies:
     print("No valid frequency found in CSV.")
 
+frequencies = list(set(frequencies)) # get unique elements by transorming into a set and back
+frequencies.sort()
+print("all frequencies", frequencies)
+#frequencies = frequencies[0:num_freqs]
+#print("reduced frequencies", frequencies)
+
 
 with open(csv_path, newline='', encoding='utf-8') as csvfile:
     csv_reader = csv.reader(csvfile, delimiter=',')
@@ -134,6 +143,9 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
         try:
             freq_val = float(freq_str)
         except ValueError:
+            continue
+
+        if freq_val not in frequencies:
             continue
 
         mol = None
@@ -167,7 +179,8 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
         y = torch.cat([real_mat, imag_mat], dim=-1)  # shape [12]
             
         data_entry = Data(
-            idx = int(row[0]),
+            idx = mol.number,
+            smiles = mol.smile,
             pos=pos.to(torch.float32),    # Atomic positions
             z=torch.LongTensor(z),        # Atomic numbers
             freq=torch.tensor(float(freq_val), dtype=torch.float32),
@@ -182,14 +195,29 @@ ex2 = dataset[5]
 print("dataset[0] :", ex1.idx, ex1.freq, ex1.y)
 print("dataset[5] :", ex2.idx, ex2.freq, ex2.y)
 
+# Select 10% of frequencies for validation
+num_val_freqs = max(1, int(0.1 * len(frequencies)))  # Ensure at least 1 frequency is selected
+val_frequencies = set(random.sample(frequencies, num_val_freqs))
+print(f"Validation frequencies: {val_frequencies}")
+val_frequencies = {float(f) for f in val_frequencies}
+print(f"Validation frequencies: {val_frequencies}")
 
-train_datasets=[]
-val_datasets=[]
-for i in range(len(dataset)):
-    if i%10==0:
-        val_datasets.append(dataset[i])
+# Split dataset based on selected validation frequencies
+train_datasets = []
+val_datasets = []
+
+for data_entry in dataset:
+    flag = False
+    for freq in val_frequencies:
+        if (abs(freq - data_entry.freq.item()) < 0.0001):
+            flag = True
+    if flag:
+        val_datasets.append(data_entry)
     else:
-        train_datasets.append(dataset[i])
+        train_datasets.append(data_entry)
+
+print(f"Training set size: {len(train_datasets)}")
+print(f"Validation set size: {len(val_datasets)}")
 
 '''Using torch_Geometric.dataloader.DataLoader Converts a dataset into a batch of 64 molecules of training data.'''
 
@@ -200,4 +228,4 @@ valloader=DataLoader(val_datasets,batch_size=batch_size,shuffle=True)
 trainer=trainer.Trainer(model,train_loader=trainloader,val_loader=valloader,loss_function=ut.fun_complex_mse_loss,lr=lr,weight_decay=0,optimizer='AdamW')
 trainer.train(num_train=epochs,targ='y')
 
-torch.save(model.state_dict(), current_dir + f'/trained_param/ee_polarizabilities_{freq_val}.pth')
+torch.save(model.state_dict(), current_dir + f'/trained_param/ee_polarizabilities_all_freq_KITqm9.pth')

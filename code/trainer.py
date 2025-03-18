@@ -95,14 +95,6 @@ class Trainer:
             running_train_loss = 0.0
             num_batches = 0
 
-            # We'll do a single "full" validation pass each epoch, but we also do
-            # step-based partial validation every val_per_train steps.
-            running_val_loss_epoch = 0.0
-            val_batches_in_epoch = 0
-
-            # We re-init an iterator over val_data, for step-based val
-            val_datas = iter(self.val_data) if self.val_data else None
-
             for j, batch in enumerate(self.train_data):
                 self.step += 1
                 torch.cuda.empty_cache()
@@ -112,11 +104,17 @@ class Trainer:
                 out = self.model(
                     pos=batch.pos.to(self.device),
                     z=batch.z.to(self.device),
+                    freq=batch.freq.to(self.device),
                     batch=batch.batch.to(self.device)
                 )
 
                 target = batch[targ].to(self.device)
                 loss = self.loss_function(out.reshape(target.shape), target)
+
+                wandb.log({
+                    "train_loss": loss.item(),
+                    "step": self.step
+                })
                 loss.backward()
                 self.optimizer.step()
 
@@ -124,7 +122,30 @@ class Trainer:
                 running_train_loss += loss.item()
                 num_batches += 1
 
-            wandb.log({"train_loss": loss.item(), "epoch": epoch})
+                """
+                # print out molecules with high losse
+                # **Step 1: If average per-sample loss > 20, check individual components**
+                loss_threshold = 40000  
+                if loss.item() > loss_threshold:
+                    print("High average loss detected, analyzing individual components...")
+
+                batch_size = len(out)  # or whatever logic obtains the batch size
+                out_reshape = out.reshape(batch_size, 3, 6)
+                target_reshape = target.reshape(batch_size, 3, 6)
+
+                for i in range(batch_size):
+                    component_loss = self.loss_function(
+                        out_reshape[i], target_reshape[i]
+                    )
+                    # out_reshape[i] and target_reshape[i] are each shape [6, 3]
+                    # **Step 2: Print molecule info if its component loss is high**
+                    if component_loss.item() > loss_threshold:
+                        print(f"Index: {batch.idx[i].item()}, "
+                            f"Smiles: {batch.smiles[i] if hasattr(batch, 'smiles') else 'N/A'}, "
+                            f"Loss: {component_loss.item()}, "
+                            f"Freq: {batch.freq[i].item()}")
+                """
+
             # ------------------------------
             # End of one epoch
             # ------------------------------
@@ -142,6 +163,7 @@ class Trainer:
                         val_out = self.model(
                             pos=val_batch.pos.to(self.device),
                             z=val_batch.z.to(self.device),
+                            freq=val_batch.freq.to(self.device),
                             batch=val_batch.batch.to(self.device)
                         )
                         full_val_loss = self.loss_function(val_out.reshape(val_target.shape), val_target).item()
@@ -149,12 +171,31 @@ class Trainer:
                         val_count += 1
                         val_mae = l1loss(val_out.reshape(val_target.shape), val_target).item()
                         val_R2 = R2(val_out.reshape(val_target.shape), val_target).item()
+                        
                         wandb.log({
                             "val_loss": full_val_loss,
                             "val_mae": val_mae,
                             "val_R2": val_R2,
-                            "epoch": epoch
+                            "step": self.step
                         })
+
+                        # print out molecules with high losse
+                        # **Step 1: If average per-sample loss > 20, check individual components**
+                        loss_threshold = 40000 
+                        if full_val_loss > loss_threshold:
+                            print("High average loss detected, analyzing individual components...")
+
+                            target_reshape = val_target.reshape(val_out.shape)
+                            # Loop over each molecule in the batch
+                            for i in range(len(val_out)):
+                                component_loss = self.loss_function(val_out[i], target_reshape[i])  # Compute loss for this molecule
+
+                                # **Step 2: Print molecule info if its component loss is high**
+                                if component_loss.item() > loss_threshold:
+                                    print(f"Index: {batch.idx[i].item()}, "
+                                        f"Smiles: {batch.smiles[i] if hasattr(batch, 'smiles') else 'N/A'}, "
+                                        f"Loss: {component_loss.item()}, "
+                                        f"Freq: {batch.freq[i].item()}")
 
                 self.model.train()
 
