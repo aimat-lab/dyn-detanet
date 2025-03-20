@@ -163,6 +163,7 @@ class Trainer:
                         val_out = self.model(
                             pos=val_batch.pos.to(self.device),
                             z=val_batch.z.to(self.device),
+                            freq=val_batch.freq.to(self.device),
                             batch=val_batch.batch.to(self.device)
                         )
                         full_val_loss = self.loss_function(val_out.reshape(val_target.shape), val_target).item()

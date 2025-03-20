@@ -56,17 +56,29 @@ class Update(nn.Module):
         self.outt = o3.Linear(irreps_in=irreps_mout, irreps_out=irreps_T, internal_weights=True,
                                 shared_weights=True)
         self.outs=nn.Linear(num_features,num_features)
-
         self.uattn=Tensorproduct_Attention(num_features=num_features,irreps_T=irreps_T,act=act)
+
+        # A small MLP to encode freq -> single scalar
+        self.freq_lin = nn.Linear(1, 1, bias=True)
+        self.freq_act = activations(act, num_features=1)
         self.reset_parameters()
 
     def reset_parameters(self):
         nn.init.xavier_uniform_(self.outs.weight)
         self.outs.bias.data.fill_(0)
-    def forward(self,T,S,mijt,mijs,index):
+
+
+    def forward(self,T,S,mijt,mijs,index,freq=None):
         # Update by resnet_style, adding first the results of message
         # and then the results of the tensor product attention module.
         j=index[1]
+            
+        if freq is not None:
+            freq_in = freq.unsqueeze(-1) 
+            freq_val = self.freq_lin(freq_in)   
+            freq_val = self.freq_act(freq_val)   
+            T = T * freq_val
+        
         ut=self.outt(scatter(src=mijt,index=j,dim=0))
         us=self.actu(self.outs(scatter(src=mijs,index=j,dim=0)))
         T=T+ut

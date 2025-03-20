@@ -302,6 +302,7 @@ class DetaNet(nn.Module):
     def forward(self,
                 z,
                 pos,
+                freq=None,
                 edge_index=None,
                 batch=None):
         '''
@@ -351,7 +352,8 @@ class DetaNet(nn.Module):
 
         #via interaction layers
         for block in self.blocks:
-            S,T=block(S=S,T=T,sh=sh,rbf=rbf,index=edge_index)
+            freq_per_node = freq[batch]
+            S,T=block(S=S,T=T,sh=sh,rbf=rbf,index=edge_index,freq=freq_per_node)
 
         #Output of irrep tensor from equivariant linear layers
         if self.irreps_out is not None:
