@@ -59,8 +59,8 @@ class Update(nn.Module):
         self.uattn=Tensorproduct_Attention(num_features=num_features,irreps_T=irreps_T,act=act)
 
         # A small MLP to encode freq -> single scalar
-        self.freq_lin = nn.Linear(1, 1, bias=True)
-        self.freq_act = activations(act, num_features=1)
+        self.freq_lin = nn.Linear(1, 2, bias=True)
+        self.freq_act = activations(act, num_features=2)
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -74,10 +74,13 @@ class Update(nn.Module):
         j=index[1]
             
         if freq is not None:
-            freq_in = freq.unsqueeze(-1) 
-            freq_val = self.freq_lin(freq_in)   
-            freq_val = self.freq_act(freq_val)   
-            T = T * freq_val
+            freq_in = freq.unsqueeze(-1)
+            freq_val = self.freq_lin(freq_in)
+            freq_val = self.freq_act(freq_val)
+            T_scale = freq_val[:, 1].unsqueeze(-1)  # => [n_nodes,1]
+            S_scale = freq_val[:, 0].unsqueeze(-1)  # => [n_nodes,1]  
+            T = T * T_scale
+            S = S * S_scale
         
         ut=self.outt(scatter(src=mijt,index=j,dim=0))
         us=self.actu(self.outs(scatter(src=mijs,index=j,dim=0)))
