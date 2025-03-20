@@ -29,49 +29,10 @@ import wandb
 import random
 
 
-batch_size = 64
+batch_size = 128
 epochs = 5
 lr=5e-5
-num_freqs=30
-
-wandb.init(
-    # set the wandb project where this run will be logged
-    project="Detanet-freq-learn",
-    name=f"All_freqs_bs{batch_size}", #f'Freq_[0:{num_freqs}]',
-    # track hyperparameters and run metadata
-    config={
-    "learning_rate": lr,
-    "architecture": "GNN",
-    "dataset": "QM9s",
-    "epochs": epochs,
-    }
-)
-
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-
-model = DetaNet(num_features=128,
-                    act='swish',
-                    maxl=3,
-                    num_block=3,
-                    radial_type='trainable_bessel',
-                    num_radial=32,
-                    attention_head=8,
-                    rc=5.0,
-                    dropout=0.0,
-                    use_cutoff=False,
-                    max_atomic_number=9,
-                    atom_ref=None,
-                    scale=1.0,
-                    scalar_outsize= 4, # 2,#4, 
-                    irreps_out= '2x2e', #'2e',# '2e+2e',
-                    summation=True,
-                    norm=False,
-                    out_type='complex_2_tensor', # '2_tensor',
-                    grad_type=None,
-                    device=device)
-model.train()
-model.to(device) 
-wandb.watch(model, log="all")
+num_freqs=61
 
 
 ##dataset = load_dataset(csv_path=csv_path, qm9_path=qm9_path)
@@ -117,9 +78,8 @@ if not frequencies:
 
 frequencies = list(set(frequencies)) # get unique elements by transorming into a set and back
 frequencies.sort()
-print("all frequencies", frequencies)
-#frequencies = frequencies[0:num_freqs]
-#print("reduced frequencies", frequencies)
+frequencies = frequencies[0:num_freqs]
+print("reduced frequencies", frequencies)
 
 
 with open(csv_path, newline='', encoding='utf-8') as csvfile:
@@ -223,6 +183,48 @@ print(f"Validation set size: {len(val_datasets)}")
 
 trainloader=DataLoader(train_datasets,batch_size=batch_size,shuffle=True)
 valloader=DataLoader(val_datasets,batch_size=batch_size,shuffle=True)
+
+
+
+wandb.init(
+    # set the wandb project where this run will be logged
+    project="Detanet-freq-learn",
+    name=f"Freqs[0:{num_freqs}]_bs{batch_size}", 
+    # track hyperparameters and run metadata
+    config={
+    "learning_rate": lr,
+    "architecture": "GNN",
+    "dataset": "QM9s",
+    "epochs": epochs,
+    }
+)
+
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+model = DetaNet(num_features=128,
+                    act='swish',
+                    maxl=3,
+                    num_block=3,
+                    radial_type='trainable_bessel',
+                    num_radial=32,
+                    attention_head=8,
+                    rc=5.0,
+                    dropout=0.0,
+                    use_cutoff=False,
+                    max_atomic_number=9,
+                    atom_ref=None,
+                    scale=1.0,
+                    scalar_outsize= 4, # 2,#4, 
+                    irreps_out= '2x2e', #'2e',# '2e+2e',
+                    summation=True,
+                    norm=False,
+                    out_type='complex_2_tensor', # '2_tensor',
+                    grad_type=None,
+                    device=device)
+model.train()
+model.to(device) 
+wandb.watch(model, log="all")
+
 
 '''Finally, using the trainer, training 20 times from a 5e-4 learning rate'''
 trainer=trainer.Trainer(model,train_loader=trainloader,val_loader=valloader,loss_function=ut.fun_complex_mse_loss,lr=lr,weight_decay=0,optimizer='AdamW')
