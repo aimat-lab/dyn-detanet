@@ -26,14 +26,14 @@ import json
 
 from detanet_model import *
 import wandb
-import random
 
 
-batch_size = 128
-epochs = 5
-lr=5e-5
-num_freqs=61
+batch_size = 32
+epochs = 10
+lr=5e-4
+freq_num = 10
 
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 ##dataset = load_dataset(csv_path=csv_path, qm9_path=qm9_path)
 
@@ -49,38 +49,30 @@ logging.basicConfig(
 )
 logging.info(f"torch.cuda.is_available() {torch.cuda.is_available()}")
 
-qm9s = torch.load(os.path.join(data_dir, "qm9s.pt"))
-print("qm9s is loaded.")
 
-# Build a dictionary keyed by the .number attribute once
-qm9_dict = {mol.number: mol for mol in qm9s}
+# Specify CSV file path
+csv_path_geometries = data_dir + "/KITqm9_geometries.csv"
+geometries = ut.load_geometry(csv_path_geometries)
+
+# Print some sample molecules
+for key, value in list(geometries.items())[:3]:  # Print first 3 molecules
+    print(f"IDX: {key}, Data: {value}")
+
+# Example: Accessing a molecule's data
+idx_to_check = 34  # Example index
+if idx_to_check in geometries:
+    molecule = geometries[idx_to_check]
+    print(f"\nMolecule {idx_to_check}:")
+    print("Atomic Numbers (z):", molecule.z)
+    print("Geometries (pos):", molecule.pos)
+else:
+    print(f"Molecule {idx_to_check} not found in dataset.")
 
 dataset = []
-frequencies = []
-
-with open(csv_path, newline='', encoding='utf-8') as csvfile:
-    csv_reader = csv.reader(csvfile, delimiter=',')
-    header = next(csv_reader)
-    freq_idx = header.index("frequency")
-
-    for row in csv_reader:
-        if not row:
-            continue
-        try:
-            f_val = float(row[freq_idx])
-            frequencies.append(f_val)
-        except ValueError:
-            # skip invalid freq
-            pass
+frequencies = ut.load_unique_frequencies(csv_path)
 
 if not frequencies:
     print("No valid frequency found in CSV.")
-
-frequencies = list(set(frequencies)) # get unique elements by transorming into a set and back
-frequencies.sort()
-frequencies = frequencies[0:num_freqs]
-print("reduced frequencies", frequencies)
-
 
 with open(csv_path, newline='', encoding='utf-8') as csvfile:
     csv_reader = csv.reader(csvfile, delimiter=',')
@@ -105,18 +97,18 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
         except ValueError:
             continue
 
-        if freq_val not in frequencies:
+        # Keep only frequency=0.0
+        if freq_val != frequencies[freq_num]:
             continue
 
         mol = None
-        # Now you can look up any 'idx' in constant time
-        if idx in qm9_dict:
-            mol = qm9_dict[idx]
+
+        if idx in geometries:
+            mol = geometries[idx]
         else:
             continue
-        
-        pos = mol.pos
         z = mol.z
+        pos = mol.pos
 
         # Parse JSON for real matrix
         matrix_real_str = row[matrix_real_idx]
@@ -139,14 +131,14 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
         y = torch.cat([real_mat, imag_mat], dim=-1)  # shape [12]
             
         data_entry = Data(
-            idx = mol.number,
-            smiles = mol.smile,
+            idx = int(row[0]),
             pos=pos.to(torch.float32),    # Atomic positions
             z=torch.LongTensor(z),        # Atomic numbers
             freq=torch.tensor(float(freq_val), dtype=torch.float32),
             y=y,  # Polarizability tensor (target)
         )
         dataset.append(data_entry)
+    print("Frequency: ", frequencies[freq_num])
 
 print("Length of dataset: ", len(dataset))
 ex1 = dataset[0]
@@ -155,51 +147,19 @@ ex2 = dataset[5]
 print("dataset[0] :", ex1.idx, ex1.freq, ex1.y)
 print("dataset[5] :", ex2.idx, ex2.freq, ex2.y)
 
-# Select 10% of frequencies for validation
-num_val_freqs = max(1, int(0.1 * len(frequencies)))  # Ensure at least 1 frequency is selected
-val_frequencies = set(random.sample(frequencies, num_val_freqs))
-print(f"Validation frequencies: {val_frequencies}")
-val_frequencies = {float(f) for f in val_frequencies}
-print(f"Validation frequencies: {val_frequencies}")
-
-# Split dataset based on selected validation frequencies
-train_datasets = []
-val_datasets = []
-
-for data_entry in dataset:
-    flag = False
-    for freq in val_frequencies:
-        if (abs(freq - data_entry.freq.item()) < 0.0001):
-            flag = True
-    if flag:
-        val_datasets.append(data_entry)
+train_datasets=[]
+val_datasets=[]
+for i in range(len(dataset)):
+    if i%10==0:
+        val_datasets.append(dataset[i])
     else:
-        train_datasets.append(data_entry)
-
-print(f"Training set size: {len(train_datasets)}")
-print(f"Validation set size: {len(val_datasets)}")
+        train_datasets.append(dataset[i])
 
 '''Using torch_Geometric.dataloader.DataLoader Converts a dataset into a batch of 64 molecules of training data.'''
 
 trainloader=DataLoader(train_datasets,batch_size=batch_size,shuffle=True)
 valloader=DataLoader(val_datasets,batch_size=batch_size,shuffle=True)
 
-
-
-wandb.init(
-    # set the wandb project where this run will be logged
-    project="Detanet-freq-learn",
-    name=f"Freqs[0:{num_freqs}]_bs{batch_size}", 
-    # track hyperparameters and run metadata
-    config={
-    "learning_rate": lr,
-    "architecture": "GNN",
-    "dataset": "QM9s",
-    "epochs": epochs,
-    }
-)
-
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 model = DetaNet(num_features=128,
                     act='swish',
@@ -214,7 +174,7 @@ model = DetaNet(num_features=128,
                     max_atomic_number=9,
                     atom_ref=None,
                     scale=1.0,
-                    scalar_outsize= 4, # 2,#4, 
+                    scalar_outsize=4, # 2,#4, 
                     irreps_out= '2x2e', #'2e',# '2e+2e',
                     summation=True,
                     norm=False,
@@ -223,6 +183,21 @@ model = DetaNet(num_features=128,
                     device=device)
 model.train()
 model.to(device) 
+
+
+wandb.init(
+    # set the wandb project where this run will be logged
+    project="Detanet",
+    name=f"KITqm9_freq_{ frequencies[freq_num]}",
+
+    # track hyperparameters and run metadata
+    config={
+    "learning_rate": lr,
+    "architecture": "GNN",
+    "dataset": "KITqm9",
+    "epochs": epochs,
+    }
+)
 wandb.watch(model, log="all")
 
 
@@ -230,4 +205,4 @@ wandb.watch(model, log="all")
 trainer=trainer.Trainer(model,train_loader=trainloader,val_loader=valloader,loss_function=ut.fun_complex_mse_loss,lr=lr,weight_decay=0,optimizer='AdamW')
 trainer.train(num_train=epochs,targ='y')
 
-torch.save(model.state_dict(), current_dir + f'/trained_param/ee_polarizabilities_all_freq_KITqm9.pth')
+torch.save(model.state_dict(), current_dir + f'/trained_param/ee_polarizabilities_{freq_val}.pth')
