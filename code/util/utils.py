@@ -5,6 +5,10 @@ from torch_geometric.data import Data
 import json
 import csv
 import numpy as np
+import pandas as pd
+import csv
+from functools import partial
+import math
 
 # Function to process SMILES into atomic numbers and 3D positionn
 def smiles_to_graph(smiles):
@@ -198,7 +202,6 @@ def load_geometry(csv_path_geometries):
     with open(csv_path_geometries, newline='', encoding='utf-8') as csvfile:
         csv_reader = csv.reader(csvfile, delimiter=',')
         header = next(csv_reader)  # Read header
-        print("header", header)
         # Column indices
         idx_col = header.index("idx")
         num_molecules_col = header.index("Number of Molecules")
@@ -256,3 +259,186 @@ def load_unique_frequencies(csv_path):
                 # skip invalid freq
                 pass
     return list(set(frequencies))
+
+
+def load_spectra(csv_path, fun_type="l"):
+    dataset_dict = {}
+    with open(csv_path, "r", encoding="utf-8") as infile:
+        reader = csv.reader(infile)
+
+        type_line = next(reader)       
+        empty_line = next(reader)   
+        freq_line = next(reader)         
+
+        type_entries = type_line[1:]
+        freq_entries = freq_line[1:]
+
+        freq_values = []
+        for x in freq_entries:
+            try:
+                freq_values.append(float(x))
+            except ValueError:
+                # If conversion fails, store None
+                freq_values.append(None)
+
+    
+        mask = []
+        # Build a mask that selects only columns of interest
+        if fun_type == "l":
+            # Indices of columns whose type is "spec. L 0.05eV"
+            mask = [i for i, t in enumerate(type_entries) if t == "spec. L 0.05eV"]
+        elif fun_type == "g":
+            # Indices of columns whose type is "spec. G 0.5eV"
+            mask = [i for i, t in enumerate(type_entries) if t == "spec. G 0.5eV"]
+        else:
+            raise ValueError("Please use fun_type='l' (Lorentzian) or fun_type='g' (Gaussian).")
+
+        # Get just the frequencies that correspond to the masked columns
+        selected_freqs = [freq_values[i] for i in mask]
+
+        for row in reader:
+            if not row:
+                continue  # skip empty lines
+
+            idx = int(row[0])
+            # Remove the first entry if it's just a label or ID (depends on your CSV format)
+            row_vals = row[1:]  # skip the leftmost column if it’s not numeric
+            
+            row_vals = [row_vals[i] for i in mask]
+            numeric_vals = [float(v) for v in row_vals]
+            dataset_dict[idx] = {'frequencies': selected_freqs, 'values': numeric_vals}
+        
+    return dataset_dict
+
+        
+def get_closest_spectrum_value(dataset_dict, molecule_id, target_freq):
+    """
+    Finds the closest frequency to `target_freq` in the spectrum of `molecule_id`
+    and returns the corresponding value.
+
+    Parameters:
+    - dataset_dict: The dataset dictionary created by `load_spectra`.
+    - molecule_id: The string identifier for the molecule (as in the CSV).
+    - target_freq: The frequency you want to look up.
+
+    Returns:
+    - (closest_freq, value_at_closest_freq)
+    """
+    if molecule_id not in dataset_dict:
+        raise KeyError(f"Molecule ID '{molecule_id}' not found in dataset.")
+
+    freqs = dataset_dict[molecule_id]['frequencies']
+    values = dataset_dict[molecule_id]['values']
+
+    # Find index of closest frequency
+    closest_index = min(range(len(freqs)), key=lambda i: abs(freqs[i] - target_freq))
+
+    return values[closest_index]
+
+
+
+
+def lorentzian_func(x, center, amplitude, gamma=0.05):
+    """
+    Basic Lorentzian function:
+      amplitude / [1 + ((x - center) / gamma)^2]
+    """
+    return amplitude / (1.0 + ((x - center) / gamma)**2)
+
+def gaussian_func(x, center, amplitude, sigma=0.5):
+    """
+    Basic Gaussian function:
+      amplitude * exp( -((x - center)^2 / (2 * sigma^2)) )
+    """
+    exponent = -((x - center)**2) / (2.0 * sigma**2)
+    return amplitude * math.exp(exponent)
+
+def load_spectra_with_profiles(csv_path, fun_type="l"):
+    """
+    Reads the CSV and constructs a list of line-shape functions (Lorentzian or
+    Gaussian) for each row's (frequency, intensity) pair. The dictionary entry
+    for each molecule ID will contain:
+      {
+         'line_shapes': [callable, callable, ...], 
+         'freq_centers': [f1, f2, ...],  # The center frequencies
+      }
+
+    :param csv_path: path to your CSV file
+    :param fun_type: either 'l' for Lorentzian or 'g' for Gaussian in the CSV
+    :return: dict of molecule_id -> { 'line_shapes': [...], 'freq_centers': [...] }
+    """
+    dataset_dict = {}
+
+    with open(csv_path, "r", encoding="utf-8") as infile:
+        reader = csv.reader(infile)
+
+        # The first line: e.g. "ID, spec. L 0.05eV, spec. L 0.05eV, ..."
+        type_line = next(reader)
+        empty_line = next(reader) 
+        # The third line: e.g. "ID, 1.5, 1.55, 1.6, 1.65, ..."
+        freq_line = next(reader)
+
+        # Actual text headers after "ID"
+        type_entries = type_line[1:]
+        # Frequencies from the line after "ID"
+        freq_entries = freq_line[1:]
+
+        # Convert the frequency headers into floats (some might be empty)
+        freq_values = []
+        for x in freq_entries:
+            try:
+                freq_values.append(float(x))
+            except ValueError:
+                freq_values.append(None)
+
+        # Build a mask that selects only columns of interest (Lorentzian or Gaussian)
+        if fun_type == "l":
+            mask = [i for i, t in enumerate(type_entries) if t == "spec. L 0.05eV"]
+            width_param = 0.05   # gamma for Lorentzian
+            is_lorentzian = True
+        elif fun_type == "g":
+            mask = [i for i, t in enumerate(type_entries) if t == "spec. G 0.5eV"]
+            width_param = 0.5    # sigma for Gaussian
+            is_lorentzian = False
+        else:
+            raise ValueError("Please use fun_type='l' (Lorentzian) or fun_type='g' (Gaussian).")
+
+        # Keep only the masked columns (our relevant frequencies)
+        selected_freqs = [freq_values[i] for i in mask]
+
+        # Now read the rest of the file for data rows
+        for row in reader:
+            if not row:
+                continue  # skip empty lines
+
+            idx_str = row[0].strip()
+            if not idx_str.isdigit():
+                # In case there's an unexpected string instead of an integer ID
+                continue
+
+            idx = int(idx_str)
+
+            # Next columns are the intensities
+            row_vals = row[1:]
+            # Filter by the same mask
+            row_vals = [row_vals[i] for i in mask]
+
+            # Convert them to floats (the intensities)
+            numeric_vals = [float(v) for v in row_vals]
+
+            # Create line-shape callables for each frequency/intensity pair
+            # partial(...) => returns a function f(x)
+            if is_lorentzian:
+                line_shapes = [
+                    partial(lorentzian_func, center=f, amplitude=a, gamma=width_param)
+                    for f, a in zip(selected_freqs, numeric_vals)
+                ]
+            else:
+                line_shapes = [
+                    partial(gaussian_func, center=f, amplitude=a, sigma=width_param)
+                    for f, a in zip(selected_freqs, numeric_vals)
+                ]
+
+            dataset_dict[idx] = {line_shapes}
+
+    return dataset_dict

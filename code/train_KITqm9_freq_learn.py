@@ -27,14 +27,15 @@ import json
 from detanet_model import *
 import wandb
 import random
+random.seed(42)
 
 batch_size = 128
-epochs = 5
-lr=5e-5
-epochs = 5
+epochs = 60
 lr=5e-4
 num_freqs=61
-random.seed(42)
+
+high_spec_cutoff = 0.1
+low_fraction = 0.006
 
 ##dataset = load_dataset(csv_path=csv_path, qm9_path=qm9_path)
 
@@ -43,36 +44,16 @@ parent_dir = os.path.dirname(current_dir)
 data_dir = os.path.join(parent_dir, 'data')
 csv_path = data_dir + "/ee_polarizabilities_qm9s.csv"
 
-logging.basicConfig(
-    filename=parent_dir + "/log/train_detanet.log", # '/pfs/work7/workspace/scratch/pf1892-ws/logs/training_detaNet.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logging.info(f"torch.cuda.is_available() {torch.cuda.is_available()}")
-
-# Specify CSV file path
-csv_path_geometries = data_dir + "/KITqm9_geometries.csv"
-geometries = ut.load_geometry(csv_path_geometries)
-
-# Print some sample molecules
-for key, value in list(geometries.items())[:3]:  # Print first 3 molecules
-    print(f"IDX: {key}, Data: {value}")
-
-# Example: Accessing a molecule's data
-idx_to_check = 34  # Example index
-if idx_to_check in geometries:
-    molecule = geometries[idx_to_check]
-    print(f"\nMolecule {idx_to_check}:")
-    print("Atomic Numbers (z):", molecule.z)
-    print("Geometries (pos):", molecule.pos)
-else:
-    print(f"Molecule {idx_to_check} not found in dataset.")
-
 dataset = []
 frequencies = ut.load_unique_frequencies(csv_path)
 
-if not frequencies:
-    print("No valid frequency found in CSV.")
+csv_path_geometries = data_dir + "/KITqm9_geometries.csv"
+geometries = ut.load_geometry(csv_path_geometries)
+
+csv_spectra = data_dir + "/DATA_QM9_reduced_2025_03_06.csv"
+sprectras = ut.load_spectra(csv_spectra)
+
+count = 0
 
 with open(csv_path, newline='', encoding='utf-8') as csvfile:
     csv_reader = csv.reader(csvfile, delimiter=',')
@@ -108,6 +89,7 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
             continue        
         pos = mol.pos
         z = mol.z
+        spectrum_value = ut.get_closest_spectrum_value(sprectras, idx, freq_val)
 
         # Parse JSON for real matrix
         matrix_real_str = row[matrix_real_idx]
@@ -134,16 +116,16 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
             pos=pos.to(torch.float32),    # Atomic positions
             z=torch.LongTensor(z),        # Atomic numbers
             freq=torch.tensor(float(freq_val), dtype=torch.float32),
+            spec=torch.tensor(float(spectrum_value), dtype=torch.float32),
             y=y,  # Polarizability tensor (target)
         )
-        if spectrum_value < 0.000005:#  high_spec_cutoff:
+        if spectrum_value > high_spec_cutoff:
             dataset.append(data_entry)
             count += 1
         else:
-            pass
             # Randomly sample ~0.2% of the "low-spec" data
-            #if random.random() < low_fraction:
-             #   dataset.append(data_entry)
+            if random.random() < low_fraction:
+                dataset.append(data_entry)
                 
 
 
@@ -335,11 +317,18 @@ print(f"Validation molecule IDs: {sorted(val_mol_ids)}")
 print(f"Training set size: {len(train_datasets)}")
 print(f"Validation set size: {len(val_datasets)}")
 
+
 '''Using torch_Geometric.dataloader.DataLoader Converts a dataset into a batch of 64 molecules of training data.'''
 
 trainloader=DataLoader(train_datasets,batch_size=batch_size,shuffle=True)
 valloader=DataLoader(val_datasets,batch_size=batch_size,shuffle=True)
 
+logging.basicConfig(
+    filename=parent_dir + "/log/train_detanet.log", # '/pfs/work7/workspace/scratch/pf1892-ws/logs/training_detaNet.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logging.info(f"torch.cuda.is_available() {torch.cuda.is_available()}")
 
 wandb.init(
     # set the wandb project where this run will be logged

@@ -56,17 +56,42 @@ class Update(nn.Module):
         self.outt = o3.Linear(irreps_in=irreps_mout, irreps_out=irreps_T, internal_weights=True,
                                 shared_weights=True)
         self.outs=nn.Linear(num_features,num_features)
-
         self.uattn=Tensorproduct_Attention(num_features=num_features,irreps_T=irreps_T,act=act)
+
+        # A small MLP to encode freq -> single scalar
+        #self.spec_lin = nn.Linear(1, 2, bias=True)
+        #self.spec_act = activations(act, num_features=2)
+        
+        hidden_dim = max(4, num_features // 4)  # example "mini" hidden size
+        self.spec_mlp = nn.Sequential(
+            nn.Linear(1, hidden_dim),
+            activations(act, num_features=hidden_dim),
+            nn.Linear(hidden_dim, 2)
+        )
         self.reset_parameters()
 
     def reset_parameters(self):
         nn.init.xavier_uniform_(self.outs.weight)
         self.outs.bias.data.fill_(0)
-    def forward(self,T,S,mijt,mijs,index):
+
+
+    def forward(self,T,S,mijt,mijs,index,spec=None):
         # Update by resnet_style, adding first the results of message
         # and then the results of the tensor product attention module.
         j=index[1]
+            
+        #if spec is not None:
+        if False:
+            spec_in = spec.unsqueeze(-1)
+            spec_val = self.spec_mlp(spec_in)
+            #spec_val = self.spec_lin(spec_in)
+            #spec_val = self.spec_act(spec_val)
+            T_scale = spec_val[:, 0].unsqueeze(-1)  # => [n_nodes,1]
+            S_scale = spec_val[:, 1].unsqueeze(-1)  # => [n_nodes,1]
+            print("S_scale", S_scale)
+            T = T * T_scale
+            S = S * S_scale
+        
         ut=self.outt(scatter(src=mijt,index=j,dim=0))
         us=self.actu(self.outs(scatter(src=mijs,index=j,dim=0)))
         T=T+ut
