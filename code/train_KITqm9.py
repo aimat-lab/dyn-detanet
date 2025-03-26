@@ -27,49 +27,13 @@ import json
 from detanet_model import *
 import wandb
 
-batch_size = 64
-epochs = 30
-lr=5e-5
 
-wandb.init(
-    # set the wandb project where this run will be logged
-    project="Detanet-all-freq",
-
-    # track hyperparameters and run metadata
-    config={
-    "learning_rate": lr,
-    "architecture": "GNN",
-    "dataset": "QM9s",
-    "epochs": epochs,
-    }
-)
+batch_size = 32
+epochs = 10
+lr=5e-4
+freq_num = 10
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-
-model = DetaNet(num_features=128,
-                    act='swish',
-                    maxl=3,
-                    num_block=3,
-                    radial_type='trainable_bessel',
-                    num_radial=32,
-                    attention_head=8,
-                    rc=5.0,
-                    dropout=0.0,
-                    use_cutoff=False,
-                    max_atomic_number=9,
-                    atom_ref=None,
-                    scale=1.0,
-                    scalar_outsize= 4, # 2,#4, 
-                    irreps_out= '2x2e', #'2e',# '2e+2e',
-                    summation=True,
-                    norm=False,
-                    out_type='complex_2_tensor', # '2_tensor',
-                    grad_type=None,
-                    device=device)
-model.train()
-model.to(device) 
-wandb.watch(model, log="all")
-
 
 ##dataset = load_dataset(csv_path=csv_path, qm9_path=qm9_path)
 
@@ -85,33 +49,30 @@ logging.basicConfig(
 )
 logging.info(f"torch.cuda.is_available() {torch.cuda.is_available()}")
 
-qm9s = torch.load(os.path.join(data_dir, "qm9s.pt"))
-print("qm9s is loaded.")
 
-# Build a dictionary keyed by the .number attribute once
-qm9_dict = {mol.number: mol for mol in qm9s}
+# Specify CSV file path
+csv_path_geometries = data_dir + "/KITqm9_geometries.csv"
+geometries = ut.load_geometry(csv_path_geometries)
+
+# Print some sample molecules
+for key, value in list(geometries.items())[:3]:  # Print first 3 molecules
+    print(f"IDX: {key}, Data: {value}")
+
+# Example: Accessing a molecule's data
+idx_to_check = 34  # Example index
+if idx_to_check in geometries:
+    molecule = geometries[idx_to_check]
+    print(f"\nMolecule {idx_to_check}:")
+    print("Atomic Numbers (z):", molecule.z)
+    print("Geometries (pos):", molecule.pos)
+else:
+    print(f"Molecule {idx_to_check} not found in dataset.")
 
 dataset = []
-frequencies = []
-
-with open(csv_path, newline='', encoding='utf-8') as csvfile:
-    csv_reader = csv.reader(csvfile, delimiter=',')
-    header = next(csv_reader)
-    freq_idx = header.index("frequency")
-
-    for row in csv_reader:
-        if not row:
-            continue
-        try:
-            f_val = float(row[freq_idx])
-            frequencies.append(f_val)
-        except ValueError:
-            # skip invalid freq
-            pass
+frequencies = ut.load_unique_frequencies(csv_path)
 
 if not frequencies:
     print("No valid frequency found in CSV.")
-
 
 with open(csv_path, newline='', encoding='utf-8') as csvfile:
     csv_reader = csv.reader(csvfile, delimiter=',')
@@ -136,15 +97,18 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
         except ValueError:
             continue
 
+        # Keep only frequency=0.0
+        if freq_val != frequencies[freq_num]:
+            continue
+
         mol = None
-        # Now you can look up any 'idx' in constant time
-        if idx in qm9_dict:
-            mol = qm9_dict[idx]
+
+        if idx in geometries:
+            mol = geometries[idx]
         else:
             continue
-        
-        pos = mol.pos
         z = mol.z
+        pos = mol.pos
 
         # Parse JSON for real matrix
         matrix_real_str = row[matrix_real_idx]
@@ -174,6 +138,7 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
             y=y,  # Polarizability tensor (target)
         )
         dataset.append(data_entry)
+    print("Frequency: ", frequencies[freq_num])
 
 print("Length of dataset: ", len(dataset))
 ex1 = dataset[0]
@@ -181,7 +146,6 @@ ex2 = dataset[5]
 
 print("dataset[0] :", ex1.idx, ex1.freq, ex1.y)
 print("dataset[5] :", ex2.idx, ex2.freq, ex2.y)
-
 
 train_datasets=[]
 val_datasets=[]
@@ -195,6 +159,47 @@ for i in range(len(dataset)):
 
 trainloader=DataLoader(train_datasets,batch_size=batch_size,shuffle=True)
 valloader=DataLoader(val_datasets,batch_size=batch_size,shuffle=True)
+
+
+model = DetaNet(num_features=128,
+                    act='swish',
+                    maxl=3,
+                    num_block=3,
+                    radial_type='trainable_bessel',
+                    num_radial=32,
+                    attention_head=8,
+                    rc=5.0,
+                    dropout=0.0,
+                    use_cutoff=False,
+                    max_atomic_number=9,
+                    atom_ref=None,
+                    scale=1.0,
+                    scalar_outsize=4, # 2,#4, 
+                    irreps_out= '2x2e', #'2e',# '2e+2e',
+                    summation=True,
+                    norm=False,
+                    out_type='complex_2_tensor', # '2_tensor',
+                    grad_type=None,
+                    device=device)
+model.train()
+model.to(device) 
+
+
+wandb.init(
+    # set the wandb project where this run will be logged
+    project="Detanet",
+    name=f"KITqm9_freq_{ frequencies[freq_num]}",
+
+    # track hyperparameters and run metadata
+    config={
+    "learning_rate": lr,
+    "architecture": "GNN",
+    "dataset": "KITqm9",
+    "epochs": epochs,
+    }
+)
+wandb.watch(model, log="all")
+
 
 '''Finally, using the trainer, training 20 times from a 5e-4 learning rate'''
 trainer=trainer.Trainer(model,train_loader=trainloader,val_loader=valloader,loss_function=ut.fun_complex_mse_loss,lr=lr,weight_decay=0,optimizer='AdamW')

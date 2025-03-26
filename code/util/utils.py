@@ -1,6 +1,7 @@
 from rdkit import Chem
 from rdkit.Chem import AllChem
 import torch
+from torch_geometric.data import Data
 import json
 import csv
 import numpy as np
@@ -179,3 +180,79 @@ def normalize_polarizability(real_3x3, imag_3x3, real_mean, real_std, imag_mean,
 
     return y_norm_3x6
 
+
+
+# Utility function to convert atomic symbols to atomic numbers
+def element_to_atomic_number(element):
+    periodic_table = {
+        'H': 1, 'He': 2, 'Li': 3, 'Be': 4, 'B': 5, 'C': 6, 'N': 7, 'O': 8, 'F': 9, 'Ne': 10,
+        'Na': 11, 'Mg': 12, 'Al': 13, 'Si': 14, 'P': 15, 'S': 16, 'Cl': 17, 'Ar': 18
+        # Add more elements if necessary
+    }
+    return periodic_table.get(element, 0)  # Default to 0 if element is unknown
+
+# Load the dataset from the CSV file
+def load_geometry(csv_path_geometries):
+    dataset_dict = {}  # Dictionary with idx as key
+
+    with open(csv_path_geometries, newline='', encoding='utf-8') as csvfile:
+        csv_reader = csv.reader(csvfile, delimiter=',')
+        header = next(csv_reader)  # Read header
+        print("header", header)
+        # Column indices
+        idx_col = header.index("idx")
+        num_molecules_col = header.index("Number of Molecules")
+        atoms_col = header.index("Atoms")
+        geometries_col = header.index("Geometries")
+
+        for row in csv_reader:
+            try:
+                idx = int(row[idx_col])  # Get molecule ID
+            except ValueError:
+                print(f"Skipping invalid idx: {row[idx_col]}")
+                continue
+
+            try:
+                # Parse atomic symbols and convert to atomic numbers
+                atom_symbols = json.loads(row[atoms_col].replace("'", "\""))  # Convert single quotes to double for JSON
+                atomic_numbers = [element_to_atomic_number(el) for el in atom_symbols]
+                z = torch.tensor(atomic_numbers, dtype=torch.long)
+
+                # Parse geometry (3D coordinates)
+                geometries = json.loads(row[geometries_col])  # Expected format: [[x, y, z], ...]
+                pos = torch.tensor(geometries, dtype=torch.float32)
+
+                # Create a PyTorch Geometric Data object
+                data_entry = Data(
+                    idx=idx,
+                    z=z,       # Atomic numbers
+                    pos=pos    # Atomic positions
+                )
+                # Store in dictionary
+                dataset_dict[idx] = data_entry
+
+
+            except (json.JSONDecodeError, ValueError) as e:
+                print(f"Error parsing row for idx {idx}: {e}")
+                continue
+
+    return dataset_dict
+
+
+def load_unique_frequencies(csv_path):
+    frequencies = []
+    with open(csv_path, newline='', encoding='utf-8') as csvfile:
+        csv_reader = csv.reader(csvfile, delimiter=',')
+        header = next(csv_reader)
+        freq_idx = header.index("frequency")
+
+        for row in csv_reader:
+            if not row:
+                continue
+            try:
+                f_val = float(row[freq_idx])
+                frequencies.append(f_val)
+            except ValueError:
+                # skip invalid freq
+                pass
+    return list(set(frequencies))
