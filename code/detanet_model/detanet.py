@@ -215,7 +215,7 @@ class DetaNet(nn.Module):
         return self.ct.to_cartesian(torch.concat(tensors=(sb,outt+ta),dim=-1))
     
 
-    def cal_complex_p_tensor(self, z, pos, batch, outs, outt, freq=None):
+    def cal_complex_p_tensor(self, z, pos, batch, outs, outt):
         sa_re, sb_re, sa_im, sb_im = torch.split(outs, 1, dim=-1)
         ra = self.centroid_coordinate(z=z, pos=pos, batch=batch)
 
@@ -306,7 +306,7 @@ class DetaNet(nn.Module):
     def forward(self,
                 z,
                 pos,
-                freq,
+                spec=None,
                 edge_index=None,
                 batch=None):
         '''
@@ -364,7 +364,8 @@ class DetaNet(nn.Module):
 
         #via interaction layers
         for block in self.blocks:
-            S,T=block(S=S,T=T,sh=sh,rbf=rbf,index=edge_index)
+            spec_per_node = spec[batch]
+            S,T=block(S=S,T=T,sh=sh,rbf=rbf,index=edge_index,spec=None)
 
         #Output of irrep tensor from equivariant linear layers
         if self.irreps_out is not None:

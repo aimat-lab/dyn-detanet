@@ -104,7 +104,7 @@ class Trainer:
                 out = self.model(
                     pos=batch.pos.to(self.device),
                     z=batch.z.to(self.device),
-                    freq=batch.freq.to(self.device),
+                    spec=batch.spec.to(self.device),
                     batch=batch.batch.to(self.device)
                 )
 
@@ -163,6 +163,7 @@ class Trainer:
                         val_out = self.model(
                             pos=val_batch.pos.to(self.device),
                             z=val_batch.z.to(self.device),
+                            spec=val_batch.spec.to(self.device),
                             batch=val_batch.batch.to(self.device)
                         )
                         full_val_loss = self.loss_function(val_out.reshape(val_target.shape), val_target).item()
@@ -183,7 +184,7 @@ class Trainer:
                             "val_R2": avg_val_R,
                            })
 
-                print(f"Epoch {epoch+1}/{num_train}: Train Lepoch_val_lossoss={avg_train_loss:.6f}, Val Loss={avg_val_loss:.6f}")
+                print(f"Epoch {epoch+1}/{num_train}: Train Loss={avg_train_loss:.6f}, Val Loss={avg_val_loss:.6f}")
             else:
                 print(f"Epoch {epoch+1}/{num_train}: Train Loss={avg_train_loss:.6f}")
 
