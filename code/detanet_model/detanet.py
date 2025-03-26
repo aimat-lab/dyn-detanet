@@ -211,7 +211,7 @@ class DetaNet(nn.Module):
         return self.ct.to_cartesian(torch.concat(tensors=(sb,outt+ta),dim=-1))
     
 
-    def cal_complex_p_tensor(self, z, pos, batch, outs, outt, freq=None):
+    def cal_complex_p_tensor(self, z, pos, batch, outs, outt):
         sa_re, sb_re, sa_im, sb_im = torch.split(outs, 1, dim=-1)
         ra = self.centroid_coordinate(z=z, pos=pos, batch=batch)
 
@@ -302,7 +302,7 @@ class DetaNet(nn.Module):
     def forward(self,
                 z,
                 pos,
-                freq=None,
+                spec=None,
                 edge_index=None,
                 batch=None):
         '''
@@ -326,7 +326,11 @@ class DetaNet(nn.Module):
             edge_index=radius_graph(x=pos,r=self.rc,batch=batch)
 
         #Embedding of atomic types into scalar features (via one-hot nuclear and electronic features)
-        S=self.Embedding(z)
+        if spec is not None:
+            spec_emb = spec[batch]
+            S = self.Embedding(z=z, spec_emb_atoms=spec_emb)
+        else:    
+            S=self.Embedding(z)
         T=torch.zeros(size=(S.shape[0],self.vdim),device=S.device,dtype=S.dtype)
         i,j=edge_index
 
@@ -352,8 +356,8 @@ class DetaNet(nn.Module):
 
         #via interaction layers
         for block in self.blocks:
-            freq_per_node = freq[batch]
-            S,T=block(S=S,T=T,sh=sh,rbf=rbf,index=edge_index,freq=freq_per_node)
+            spec_per_node = spec[batch]
+            S,T=block(S=S,T=T,sh=sh,rbf=rbf,index=edge_index,spec=None)
 
         #Output of irrep tensor from equivariant linear layers
         if self.irreps_out is not None:
