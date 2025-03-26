@@ -333,11 +333,11 @@ class DetaNet(nn.Module):
         S=self.Embedding(z)
 
         # Add frequency embedding
-        if freq is not None and batch is not None:
-            freq_per_atom = freq[batch]
-            freq_per_atom = freq_per_atom.unsqueeze(-1)
-            freq_broadcast = freq_per_atom.repeat(1, self.attention_head)
-            S = torch.cat([S, freq_broadcast], dim=-1)
+        if spec is not None and batch is not None:
+            spec_per_atom = spec[batch]
+            spec_per_atom = spec_per_atom.unsqueeze(-1)
+            spec_broadcast = spec_per_atom.repeat(1, self.attention_head)
+            S = torch.cat([S, spec_broadcast], dim=-1)
 
         T=torch.zeros(size=(S.shape[0],self.vdim),device=S.device,dtype=S.dtype)
         i,j=edge_index
