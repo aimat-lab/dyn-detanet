@@ -31,6 +31,8 @@ import random
 batch_size = 128
 epochs = 5
 lr=5e-5
+epochs = 5
+lr=5e-4
 num_freqs=61
 random.seed(42)
 
@@ -134,15 +136,166 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
             freq=torch.tensor(float(freq_val), dtype=torch.float32),
             y=y,  # Polarizability tensor (target)
         )
-        dataset.append(data_entry)
+        if spectrum_value < 0.000005:#  high_spec_cutoff:
+            dataset.append(data_entry)
+            count += 1
+        else:
+            pass
+            # Randomly sample ~0.2% of the "low-spec" data
+            #if random.random() < low_fraction:
+             #   dataset.append(data_entry)
+                
 
-print("Length of dataset: ", len(dataset))
+
+print(f"Collected {count} high-spec (>0.1) entries.")
+print(f"Total dataset length: {len(dataset)}")
+
 ex1 = dataset[0]
 ex2 = dataset[5]
 
-print("dataset[0] :", ex1.idx, ex1.freq, ex1.y)
-print("dataset[5] :", ex2.idx, ex2.freq, ex2.y)
+print("dataset[0] :", ex1.idx, ex1.freq, ex1.spec)
+print("dataset[5] :", ex2.idx, ex2.freq, ex2.spec)
 
+spec_values = [item.spec.item() for item in dataset]
+spec_mean = np.mean(spec_values)
+spec_std = np.std(spec_values)
+
+print("Spec mean, std =", spec_mean, spec_std)
+for item in dataset:
+    old_val = item.spec.item()
+    norm_val = (old_val - spec_mean) / (spec_std + 1e-8)  # avoid div by zero
+    item.spec = torch.tensor(norm_val, dtype=torch.float32)
+
+
+# NORMALIZATION OF POLAR_VALUES => COMBINED
+"""
+import numpy as np
+
+y_vals = []
+
+for item in dataset:
+    y = item.y.reshape(-1).tolist()   
+    y_vals.extend(y)
+# compute mean, std
+y_mean, y_std = np.mean(y_vals), np.std(y_vals)
+
+print("y mean, std =", y_mean, y_std)
+
+# Now transform each data entry
+for item in dataset:
+    y = item.y  # [3,6]
+    # 4) do standard z-score
+    y_norm = (y - y_mean)/(y_std + 1e-8)
+    item.y = y_norm
+"""
+    
+
+# NORMALIZATION OF POLAR_VALUES => SEPAPRATE
+"""
+import numpy as np
+
+real_vals = []
+imag_vals = []
+
+for item in dataset:
+    y = item.y  # shape [3,6]
+    # real => columns [:,:3]
+    # imag => columns [:,3:]
+    real_part = y[:, :3].reshape(-1).tolist()   # shape [9]
+    imag_part = y[:, 3:].reshape(-1).tolist()   # shape [9]
+    real_vals.extend(real_part)
+    imag_vals.extend(imag_part)
+
+# compute mean, std
+real_mean, real_std = np.mean(real_vals), np.std(real_vals)
+imag_mean, imag_std = np.mean(imag_vals), np.std(imag_vals)
+
+print("Real mean, std =", real_mean, real_std)
+print("Imag mean, std =", imag_mean, imag_std)
+
+# Now transform each data entry
+for item in dataset:
+    y = item.y  # [3,6]
+    
+    # real => y[:, :3], shape [3,3]
+    # imag => y[:, 3:], shape [3,3]
+    real_slice = y[:, :3]
+    imag_slice = y[:, 3:]
+    
+    # 4) do standard z-score
+    real_norm = (real_slice - real_mean)/(real_std + 1e-8)
+    imag_norm = (imag_slice - imag_mean)/(imag_std + 1e-8)
+    
+    # reassign
+    y[:, :3] = real_norm
+    y[:, 3:] = imag_norm
+    
+    item.y = y
+"""
+
+
+# MIN MAX normalizaiton
+"""
+# 1) First pass: find global min & max of spec
+spec_list = []
+for item in dataset:
+    spec_list.append(item.spec.item())
+
+spec_min = min(spec_list)
+spec_max = max(spec_list)
+print("spec min, max =", spec_min, spec_max)
+
+for item in dataset:
+    old_val = item.spec.item()
+    norm_val = (old_val - spec_min) / (spec_max - spec_min)
+    print(norm_val)
+    item.spec = torch.tensor(norm_val, dtype=torch.float32)
+
+
+# Suppose each data_entry.y is shape [3,6].
+# real part: y[:,:3], imag part: y[:,3:]
+
+real_vals = []
+imag_vals = []
+
+for item in dataset:
+    y = item.y  # shape [3,6]
+    # Flatten each part
+    real_part = y[:, :3].reshape(-1)  # shape [9], since 3x3
+    imag_part = y[:, 3:].reshape(-1)  # shape [9], since 3x3
+
+    real_vals.extend(real_part.tolist())
+    imag_vals.extend(imag_part.tolist())
+
+real_min, real_max = min(real_vals), max(real_vals)
+imag_min, imag_max = min(imag_vals), max(imag_vals)
+
+print("Real part range:", real_min, real_max)
+print("Imag part range:", imag_min, imag_max)
+
+
+for item in dataset:
+    y = item.y  # shape [3,6]
+    # real => columns [:,:3]
+    # imag => columns [:,3:]
+
+    # 2a) Real part
+    # shape [3,3]
+    real_slice = y[:, :3]
+    real_norm = (real_slice - real_min) / (real_max - real_min)
+    y[:, :3] = real_norm
+
+    # 2b) Imag part
+    imag_slice = y[:, 3:]
+    imag_norm = (imag_slice - imag_min) / (imag_max - imag_min)
+    y[:, 3:] = imag_norm
+
+    item.y = y
+"""
+
+
+# train and validate per frequencies
+"""
 num_val_freqs = max(1, int(0.1 * len(frequencies)))  # Ensure at least 1 frequency is selected
 print("len frequencies ", len(frequencies))
 print("num_val_freqs", num_val_freqs)
@@ -164,7 +317,21 @@ for data_entry in dataset:
         val_datasets.append(data_entry)
     else:
         train_datasets.append(data_entry)
+"""
 
+
+# Train and validate per molecule
+unique_mol_ids = list({data_entry.idx for data_entry in dataset})
+random.shuffle(unique_mol_ids)
+
+num_val_mols = max(1, int(0.2 * len(unique_mol_ids)))  # e.g., 10% for validation
+val_mol_ids = set(unique_mol_ids[:num_val_mols])
+
+train_datasets = [d for d in dataset if d.idx not in val_mol_ids]
+val_datasets = [d for d in dataset if d.idx in val_mol_ids]
+
+print(f"Total unique molecules: {len(unique_mol_ids)}")
+print(f"Validation molecule IDs: {sorted(val_mol_ids)}")
 print(f"Training set size: {len(train_datasets)}")
 print(f"Validation set size: {len(val_datasets)}")
 
@@ -218,4 +385,4 @@ wandb.watch(model, log="all")
 trainer=trainer.Trainer(model,train_loader=trainloader,val_loader=valloader,loss_function=ut.fun_complex_mse_loss,lr=lr,weight_decay=0,optimizer='AdamW')
 trainer.train(num_train=epochs,targ='y')
 
-torch.save(model.state_dict(), current_dir + f'/trained_param/ee_polarizabilities_all_freq_KITqm9.pth')
+torch.save(model.state_dict(), current_dir + f'/trained_param/ee_polarizabilities_all_freq_KITqm9_smaller_than_0.000005_no_normalization.pth')

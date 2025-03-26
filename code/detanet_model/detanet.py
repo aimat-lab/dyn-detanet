@@ -118,6 +118,8 @@ class DetaNet(nn.Module):
         """
         super(DetaNet,self).__init__()
         assert num_features%attention_head==0,'attention head must be divisible by the number of features'
+        self.attention_head = attention_head
+        
         self.scale=scale
         self.ref=atom_ref
         self.norm=norm
