@@ -118,7 +118,7 @@ class DetaNet(nn.Module):
         """
         super(DetaNet,self).__init__()
         assert num_features%attention_head==0,'attention head must be divisible by the number of features'
-        num_features = num_features + attention_head
+        num_features = num_features + attention_head # Change the number of num_features
         self.attention_head = attention_head
         
         self.scale=scale
@@ -140,7 +140,7 @@ class DetaNet(nn.Module):
         # Removal of scalars with l=0
         self.irreps_sh=irrs_sh[1:]
         #self.Embedding=Embedding(num_features=num_features,act=act,device=device,max_atomic_number=max_atomic_number)
-        self.Embedding=Embedding(num_features=num_features-attention_head,act=act,device=device,max_atomic_number=max_atomic_number)        
+        self.Embedding=Embedding(num_features=num_features-attention_head,act=act,device=device,max_atomic_number=max_atomic_number) # Keep the original embedding size   
         self.Radial=Radial_Basis(radial_type=radial_type,num_radial=num_radial,use_cutoff=use_cutoff)
         blocks = []
         # interaction layers
@@ -332,7 +332,7 @@ class DetaNet(nn.Module):
         #Embedding of atomic types into scalar features (via one-hot nuclear and electronic features)
         S=self.Embedding(z)
 
-        # Add frequency embedding
+        # Concatenate spectrum
         if spec is not None and batch is not None:
             spec_per_atom = spec[batch]
             spec_per_atom = spec_per_atom.unsqueeze(-1)
