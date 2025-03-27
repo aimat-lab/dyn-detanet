@@ -31,13 +31,15 @@ import random
 random.seed(42)
 
 batch_size = 128
-epochs = 50
-lr=5e-4
+epochs = 30
+lr=5e-7
 
+# PARAMS for finetuning
+fine_tune = False
 high_spec_cutoff = 0.1
-low_fraction = 0.02
+low_fraction = 0.001
 
-fine_tune = True
+
 
 ##dataset = load_dataset(csv_path=csv_path, qm9_path=qm9_path)
 
@@ -125,15 +127,16 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
         spec_data.append(data_entry)
 
         if fine_tune:
-            if spectrum_value > high_spec_cutoff:
+            if spectrum_value < 0.00005:# > high_spec_cutoff:
                 dataset.append(data_entry)
                 count += 1
             else:
                 # Randomly sample ~0.2% of the "low-spec" data
-                if random.random() < low_fraction:
-                    dataset.append(data_entry)
+                #if random.random() < low_fraction:
+                 #   dataset.append(data_entry)
+                pass
         else:
-            if spectrum_value < 0.000005:
+            if spectrum_value < 0.0005:
                 dataset.append(data_entry)
                 count += 1
 
@@ -149,14 +152,15 @@ ex2 = dataset[5]
 print("dataset[0] :", ex1.idx, ex1.freq, ex1.spec)
 print("dataset[5] :", ex2.idx, ex2.freq, ex2.spec)
 
-spec_values = [item.spec.item() for item in spec_data]
+spec_values = [item.spec.item() for item in dataset]
 spec_mean = np.mean(spec_values)
 spec_std = np.std(spec_values)
+
 
 print("Spec mean, std =", spec_mean, spec_std)
 for item in dataset:
     old_val = item.spec.item()
-    norm_val = (old_val - spec_mean) / (spec_std + 1e-8)  # avoid div by zero
+    norm_val = ((old_val - spec_mean) / (spec_std + 1e-8))  # avoid div by zero
     item.spec = torch.tensor(norm_val, dtype=torch.float32)
 
 
@@ -379,6 +383,7 @@ model = DetaNet(num_features=128,
 
 if fine_tune:
     state_dict = torch.load("/media/maria/work_space/dyn-detanet/code/trained_param/ee_polarizabilities_all_freq_KITqm9_smaller_than_0.000005_no_N_with_S.pth")
+    #state_dict = torch.load("/media/maria/work_space/dyn-detanet/code/trained_param/ee_polarizabilities_freq_update.pth")
     model.load_state_dict(state_dict=state_dict)
 model.train()
 model.to(device)
@@ -386,10 +391,10 @@ wandb.watch(model, log="all")
 
 
 '''Finally, using the trainer, training 20 times from a 5e-4 learning rate'''
-trainer=trainer.Trainer(model,train_loader=trainloader,val_loader=valloader,loss_function=ut.fun_complex_mse_loss,lr=lr,weight_decay=0,optimizer='AdamW')
+trainer=trainer.Trainer(model,train_loader=trainloader,val_loader=valloader,loss_function=ut.fun_complex_mse_loss,lr=lr,weight_decay=1e-4,optimizer='AdamW')
 trainer.train(num_train=epochs,targ='y')
 
-torch.save(model.state_dict(), current_dir + f'/trained_param/ee_polarizabilities_all_freq_KITqm9_finetune.pth')
+torch.save(model.state_dict(), current_dir + f'/trained_param/ee_polarizabilities_freq_emb_finetune.pth')
 
 
 
@@ -408,7 +413,7 @@ plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.title(f'Loss Plot')
 plt.legend()
-plot_path = os.path.join(current_dir, f'ee_polarizabilities_all_freq_KITqm9_fine_tuning.png')
+plot_path = os.path.join(current_dir, f'ee_polarizabilities_freq_emb_finetune.png')
 plt.savefig(plot_path)
 plt.close()
 wandb.finish()
