@@ -8,10 +8,15 @@ run_configs
 /wandb
 wandb
 /wandb/*
+*__pycache__*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
 # C extensions
 *.so
