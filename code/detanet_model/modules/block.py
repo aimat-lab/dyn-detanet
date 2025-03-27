@@ -21,7 +21,7 @@ class Interaction_Block(nn.Module):
 
     def forward(self,S,T,rbf,sh,index, spec=None):
         mijt,mijs=self.message(S=S,rbf=rbf,sh=sh,index=index)
-        T,S=self.update(T=T,S=S,mijt=mijt,mijs=mijs,index=index,spec=spec)
+        T,S=self.update(T=T,S=S,mijt=mijt,mijs=mijs,index=index)
         return S,T
 
 

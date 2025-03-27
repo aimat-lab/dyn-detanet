@@ -364,8 +364,7 @@ class DetaNet(nn.Module):
 
         #via interaction layers
         for block in self.blocks:
-            spec_per_node = spec[batch]
-            S,T=block(S=S,T=T,sh=sh,rbf=rbf,index=edge_index,spec=None)
+            S,T=block(S=S,T=T,sh=sh,rbf=rbf,index=edge_index)
 
         #Output of irrep tensor from equivariant linear layers
         if self.irreps_out is not None:

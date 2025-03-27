@@ -1,5 +1,6 @@
 /QM9/
 /data/
+*.sdf
 /__pycache__/
 *.__pycache__*
 *.pyc
@@ -8,13 +9,22 @@ run_configs
 /wandb
 wandb
 /wandb/*
+*__pycache__*
+pycache/*
+*.pth
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
 # C extensions
 *.so
+
+
 
 # Distribution / packaging
 bin/
@@ -61,4 +71,5 @@ coverage.xml
 docs/_build/
 code/__pycache__/
 /code/__pycache__/
-**/__pycache__/**
+**/__pycache__/**__pycache__/
+__pycache__/
