@@ -19,6 +19,7 @@ from torch_geometric.utils import remove_self_loops
 from torch_geometric.nn import global_mean_pool
 import torch_geometric
 import logging
+import matplotlib.pyplot as plt
 
 from pathlib import Path
 import trainer
@@ -30,12 +31,13 @@ import random
 random.seed(42)
 
 batch_size = 128
-epochs = 60
+epochs = 50
 lr=5e-4
-num_freqs=61
 
 high_spec_cutoff = 0.1
-low_fraction = 0.006
+low_fraction = 0.02
+
+fine_tune = True
 
 ##dataset = load_dataset(csv_path=csv_path, qm9_path=qm9_path)
 
@@ -45,6 +47,7 @@ data_dir = os.path.join(parent_dir, 'data')
 csv_path = data_dir + "/ee_polarizabilities_qm9s.csv"
 
 dataset = []
+spec_data = []
 frequencies = ut.load_unique_frequencies(csv_path)
 
 csv_path_geometries = data_dir + "/KITqm9_geometries.csv"
@@ -119,13 +122,21 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
             spec=torch.tensor(float(spectrum_value), dtype=torch.float32),
             y=y,  # Polarizability tensor (target)
         )
-        if spectrum_value > high_spec_cutoff:
-            dataset.append(data_entry)
-            count += 1
-        else:
-            # Randomly sample ~0.2% of the "low-spec" data
-            if random.random() < low_fraction:
+        spec_data.append(data_entry)
+
+        if fine_tune:
+            if spectrum_value > high_spec_cutoff:
                 dataset.append(data_entry)
+                count += 1
+            else:
+                # Randomly sample ~0.2% of the "low-spec" data
+                if random.random() < low_fraction:
+                    dataset.append(data_entry)
+        else:
+            if spectrum_value < 0.000005:
+                dataset.append(data_entry)
+                count += 1
+
                 
 
 
@@ -138,7 +149,7 @@ ex2 = dataset[5]
 print("dataset[0] :", ex1.idx, ex1.freq, ex1.spec)
 print("dataset[5] :", ex2.idx, ex2.freq, ex2.spec)
 
-spec_values = [item.spec.item() for item in dataset]
+spec_values = [item.spec.item() for item in spec_data]
 spec_mean = np.mean(spec_values)
 spec_std = np.std(spec_values)
 
@@ -333,7 +344,7 @@ logging.info(f"torch.cuda.is_available() {torch.cuda.is_available()}")
 wandb.init(
     # set the wandb project where this run will be logged
     project="Detanet-freq-learn",
-    name=f"Freqs[0:{num_freqs}]_bs{batch_size}", 
+    name=f"All_freqs_freq-emb_with_N", 
     # track hyperparameters and run metadata
     config={
     "learning_rate": lr,
@@ -365,8 +376,12 @@ model = DetaNet(num_features=128,
                     out_type='complex_2_tensor', # '2_tensor',
                     grad_type=None,
                     device=device)
+
+if fine_tune:
+    state_dict = torch.load("/media/maria/work_space/dyn-detanet/code/trained_param/ee_polarizabilities_all_freq_KITqm9_smaller_than_0.000005_no_N_with_S.pth")
+    model.load_state_dict(state_dict=state_dict)
 model.train()
-model.to(device) 
+model.to(device)
 wandb.watch(model, log="all")
 
 
@@ -374,4 +389,27 @@ wandb.watch(model, log="all")
 trainer=trainer.Trainer(model,train_loader=trainloader,val_loader=valloader,loss_function=ut.fun_complex_mse_loss,lr=lr,weight_decay=0,optimizer='AdamW')
 trainer.train(num_train=epochs,targ='y')
 
-torch.save(model.state_dict(), current_dir + f'/trained_param/ee_polarizabilities_all_freq_KITqm9_smaller_than_0.000005_no_normalization.pth')
+torch.save(model.state_dict(), current_dir + f'/trained_param/ee_polarizabilities_all_freq_KITqm9_finetune.pth')
+
+
+
+# If your trainer does NOT store them, you need to modify your Trainer class to do so.
+train_losses = trainer.train_losses
+val_losses = trainer.val_losses
+
+# -----------------------------------------------------
+# Create and save the loss plot for this frequency
+# -----------------------------------------------------
+
+plt.figure()
+plt.plot(range(1, len(train_losses)+ 1), train_losses, label='Train Loss')
+plt.plot(range(1, len(train_losses) + 1), val_losses, label='Val Loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title(f'Loss Plot')
+plt.legend()
+plot_path = os.path.join(current_dir, f'ee_polarizabilities_all_freq_KITqm9_fine_tuning.png')
+plt.savefig(plot_path)
+plt.close()
+wandb.finish()
+

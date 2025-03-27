@@ -75,23 +75,10 @@ class Update(nn.Module):
         self.outs.bias.data.fill_(0)
 
 
-    def forward(self,T,S,mijt,mijs,index,spec=None):
+    def forward(self,T,S,mijt,mijs,index):
         # Update by resnet_style, adding first the results of message
         # and then the results of the tensor product attention module.
-        j=index[1]
-            
-        #if spec is not None:
-        if False:
-            spec_in = spec.unsqueeze(-1)
-            spec_val = self.spec_mlp(spec_in)
-            #spec_val = self.spec_lin(spec_in)
-            #spec_val = self.spec_act(spec_val)
-            T_scale = spec_val[:, 0].unsqueeze(-1)  # => [n_nodes,1]
-            S_scale = spec_val[:, 1].unsqueeze(-1)  # => [n_nodes,1]
-            print("S_scale", S_scale)
-            T = T * T_scale
-            S = S * S_scale
-        
+        j=index[1]        
         ut=self.outt(scatter(src=mijt,index=j,dim=0))
         us=self.actu(self.outs(scatter(src=mijs,index=j,dim=0)))
         T=T+ut

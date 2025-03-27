@@ -138,8 +138,7 @@ class DetaNet(nn.Module):
         irrs_sh=o3.Irreps.spherical_harmonics(lmax=maxl, p=-1)
         # Removal of scalars with l=0
         self.irreps_sh=irrs_sh[1:]
-        #self.Embedding=Embedding(num_features=num_features,act=act,device=device,max_atomic_number=max_atomic_number)
-        self.Embedding=Embedding(num_features=num_features-attention_head,act=act,device=device,max_atomic_number=max_atomic_number)        
+        self.Embedding=Embedding(num_features=num_features,act=act,device=device,max_atomic_number=max_atomic_number)
         self.Radial=Radial_Basis(radial_type=radial_type,num_radial=num_radial,use_cutoff=use_cutoff)
         blocks = []
         # interaction layers
@@ -356,8 +355,7 @@ class DetaNet(nn.Module):
 
         #via interaction layers
         for block in self.blocks:
-            spec_per_node = spec[batch]
-            S,T=block(S=S,T=T,sh=sh,rbf=rbf,index=edge_index,spec=None)
+            S,T=block(S=S,T=T,sh=sh,rbf=rbf,index=edge_index)
 
         #Output of irrep tensor from equivariant linear layers
         if self.irreps_out is not None:
