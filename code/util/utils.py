@@ -439,6 +439,6 @@ def load_spectra_with_profiles(csv_path, fun_type="l"):
                     for f, a in zip(selected_freqs, numeric_vals)
                 ]
 
-            dataset_dict[idx] = {line_shapes}
+            dataset_dict[idx] = {'fun': line_shapes}
 
     return dataset_dict
