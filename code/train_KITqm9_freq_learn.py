@@ -31,12 +31,13 @@ import random
 random.seed(42)
 
 batch_size = 128
-epochs = 50
+epochs = 5
 lr=5e-4
 
 high_spec_cutoff = 0.1
 low_fraction = 0.02
 
+balance = True
 fine_tune = False
 
 ##dataset = load_dataset(csv_path=csv_path, qm9_path=qm9_path)
@@ -125,7 +126,7 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
         )
         spec_data.append(data_entry)
 
-        if fine_tune:
+        if balance:
             if spectrum_value > high_spec_cutoff:
                 dataset.append(data_entry)
                 count += 1
@@ -134,13 +135,10 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
                 if random.random() < low_fraction:
                     dataset.append(data_entry)
         else:
-            if spectrum_value < 0.0005:
+            if spectrum_value < 5:
                 dataset.append(data_entry)
-                count += 1
-                
-
-                
-
+                count += 1           
+        
 
 print(f"Collected {count} high-spec (>0.1) entries.")
 print(f"Total dataset length: {len(dataset)}")
@@ -346,7 +344,7 @@ logging.info(f"torch.cuda.is_available() {torch.cuda.is_available()}")
 wandb.init(
     # set the wandb project where this run will be logged
     project="Detanet-freq-learn",
-    name=f"All_freqs_freq-emb_with_N", 
+    name=f"freq-readout", 
     # track hyperparameters and run metadata
     config={
     "learning_rate": lr,

@@ -124,7 +124,7 @@ class Trainer:
             # ------------------------------
             avg_train_loss = running_train_loss / num_batches
             self.train_losses.append(avg_train_loss)
-            wandb.log({"epoch": epoch, "loss_per_epoch": avg_train_loss})
+            wandb.log({"epoch": epoch, "train_loss_per_epoch": avg_train_loss})
 
             """
             # print out molecules with high losse
@@ -179,7 +179,7 @@ class Trainer:
                 avg_val_R = val_R2 / val_count
                 self.val_losses.append(avg_val_loss)
                 wandb.log({"epoch": epoch, 
-                           "epoch_val_loss": avg_val_loss,
+                           "val_loss_per_epoch": avg_val_loss,
                            "val_mae": avg_val_mae,
                             "val_R2": avg_val_R,
                            })
