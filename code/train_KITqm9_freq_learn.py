@@ -30,14 +30,14 @@ import wandb
 import random
 random.seed(42)
 
-batch_size = 128
+batch_size = 64
 epochs = 5
 lr=5e-4
 
 high_spec_cutoff = 0.1
 low_fraction = 0.02
 
-balance = True
+balance = False
 fine_tune = False
 
 ##dataset = load_dataset(csv_path=csv_path, qm9_path=qm9_path)
@@ -135,9 +135,11 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
                 if random.random() < low_fraction:
                     dataset.append(data_entry)
         else:
-            if spectrum_value < 5:
+            if spectrum_value < 0.05:
                 dataset.append(data_entry)
-                count += 1           
+                count += 1    
+            if len(dataset) == 10000:
+                break       
         
 
 print(f"Collected {count} high-spec (>0.1) entries.")
@@ -331,8 +333,8 @@ print(f"Validation set size: {len(val_datasets)}")
 
 '''Using torch_Geometric.dataloader.DataLoader Converts a dataset into a batch of 64 molecules of training data.'''
 
-trainloader=DataLoader(train_datasets,batch_size=batch_size,shuffle=True)
-valloader=DataLoader(val_datasets,batch_size=batch_size,shuffle=True)
+trainloader=DataLoader(train_datasets,batch_size=batch_size,shuffle=True, drop_last=True)
+valloader=DataLoader(val_datasets,batch_size=batch_size,shuffle=True, drop_last=True)
 
 logging.basicConfig(
     filename=parent_dir + "/log/train_detanet.log", # '/pfs/work7/workspace/scratch/pf1892-ws/logs/training_detaNet.log',
