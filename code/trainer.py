@@ -96,8 +96,8 @@ class Trainer:
                 out = self.model(
                     pos=batch.pos.to(self.device),
                     z=batch.z.to(self.device),
-                    spec=batch.spec.to(self.device),
-                    freq=batch.freq.to(self.device),
+                    spectra=batch.spectra.to(self.device),
+                    freqs=batch.freqs.to(self.device),
                     batch=batch.batch.to(self.device)
                 )
 
@@ -133,8 +133,8 @@ class Trainer:
                         val_out = self.model(
                             pos=val_batch.pos.to(self.device),
                             z=val_batch.z.to(self.device),
-                            spec=val_batch.spec.to(self.device),
-                            freq=val_batch.freq.to(self.device),
+                            spectra=val_batch.spectra.to(self.device),
+                            freqs=val_batch.freqs.to(self.device),
                             batch=val_batch.batch.to(self.device)
                         )
                         full_val_loss = self.loss_function(val_out.reshape(val_target.shape), val_target).item()

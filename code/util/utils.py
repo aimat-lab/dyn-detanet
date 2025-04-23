@@ -442,3 +442,383 @@ def load_spectra_with_profiles(csv_path, fun_type="l"):
             dataset_dict[idx] = {'fun': line_shapes}
 
     return dataset_dict
+
+from rdkit import Chem
+from rdkit.Chem import AllChem
+from torch_geometric.data import Data
+import torch
+import json
+import csv
+import numpy as np
+from functools import partial
+from detanet_model import R2
+import math
+
+# Function to process SMILES into atomic numbers and 3D positionn
+def smiles_to_graph(smiles):
+    """
+    Convert a SMILES string into atomic numbers (z) and 3D coordinates (pos) using RDKit.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None  # Invalid SMILES string
+
+    mol = Chem.AddHs(mol)  # Add hydrogens
+    result = AllChem.EmbedMolecule(mol)
+    if result != 0:
+        # Embedding failed; try with random coordinates
+        result = AllChem.EmbedMolecule(mol, useRandomCoords=True)
+        if result != 0:
+            print(f"Computation for {smiles} failed")
+            return None  # Embedding failed again
+
+    AllChem.UFFOptimizeMolecule(mol)  # Optimize geometry
+    # Extract atomic numbers
+    z = torch.tensor([atom.GetAtomicNum() for atom in mol.GetAtoms()], dtype=torch.long)
+    
+    # Extract 3D positions
+    conf = mol.GetConformer()
+    pos = torch.tensor([list(conf.GetAtomPosition(i)) for i in range(mol.GetNumAtoms())], dtype=torch.float)
+    
+    return z, pos
+
+import torch.nn.functional as F
+
+def complex_mse_loss(pred, target, alpha_param=0.5):
+
+    if pred.shape != target.shape:
+        raise ValueError(f"pred and target must have the same shape, got {pred.shape} vs {target.shape}")
+
+    #print("pred_shape", pred.shape)
+    #print("target", target)
+
+    #print("pred.shape ", pred.shape)
+
+    real_pred = pred[:, :3]   # shape [BatchSize, 3]
+    imag_pred = pred[:, 3:]   # shape [BatchSize, 3]
+    real_targ = target[:, :3]
+    imag_targ = target[:, 3:]
+
+    #print("real_pred", real_pred)
+    #print("imag_pred", imag_pred)
+    #print("real_targ", real_targ)
+    #print("imag_targ", imag_targ)
+
+    loss_real = F.mse_loss(real_pred, real_targ)
+    loss_imag = F.mse_loss(imag_pred, imag_targ)
+
+    #print("loss_real", loss_real)
+    #print("loss_imag", loss_imag)
+  
+    loss = (1 - alpha_param) * loss_real + alpha_param * loss_imag
+
+    return loss
+
+
+def fun_complex_mse_loss(pred, target):
+    return complex_mse_loss(pred, target) 
+
+
+
+def complex_uv_mse_loss(pred, target, alpha_param=0.9, beta_param = 0.9):
+    """
+    Then does a weighted MSE for real vs. imaginary plus the UV MSE.
+    """
+
+    if pred.shape != target.shape:
+        raise ValueError(f"pred and target must have the same shape, got {pred.shape} vs {target.shape}")
+
+    # Slice out real part => shape [B, 3, 3]
+    real_pred = pred[..., 0:3]
+    real_targ = target[..., 0:3]
+
+    # Slice out imaginary part => shape [B, 3, 3]
+    imag_pred = pred[..., 3:6]
+    imag_targ = target[..., 3:6]
+
+    # Slice out UV => shape [B, 3]
+    uv_pred = pred[..., 6]
+    uv_targ = target[..., 6]
+
+    # Compute MSE for each part
+    loss_real = F.mse_loss(real_pred, real_targ)
+    loss_imag = F.mse_loss(imag_pred, imag_targ)
+    loss_uv   = F.mse_loss(uv_pred,   uv_targ)
+
+    # Weighted sum of real and imaginary, plus uv
+    loss = (1 - beta_param)*((1 - alpha_param) * loss_real + alpha_param * loss_imag) + beta_param * loss_uv
+    return loss
+
+
+
+def fun_complex_uv_mse_loss(pred, target):
+    return complex_uv_mse_loss(pred, target) 
+
+
+
+
+def compute_polarizability_stats(csv_path, qm9_dict, matrix_real_idx=None, matrix_imag_idx=None):
+    """
+    Reads all entries from csv_path, collects real & imaginary polarizabilities
+    into arrays, and computes mean/std for each part.
+
+    Args:
+        csv_path (str): Path to the polarizability CSV file.
+        qm9_dict (dict): Dictionary keyed by molecule index -> PyG Data objects.
+        matrix_real_idx (int): Column index for the real part. If None, it's inferred from CSV header.
+        matrix_imag_idx (int): Column index for the imag part. If None, it's inferred from CSV header.
+
+    Returns:
+        real_mean (np.ndarray): shape [9], mean of real part
+        real_std (np.ndarray): shape [9], std of real part
+        imag_mean (np.ndarray): shape [9], mean of imag part
+        imag_std (np.ndarray): shape [9], std of imag part
+    """
+    all_real_parts = []
+    all_imag_parts = []
+
+    with open(csv_path, newline='', encoding='utf-8') as csvfile:
+        csv_reader = csv.reader(csvfile, delimiter=',')
+        header = next(csv_reader)
+
+        # If not provided, find the columns by name
+        if matrix_real_idx is None:
+            matrix_real_idx = header.index("matrix_real")
+        if matrix_imag_idx is None:
+            matrix_imag_idx = header.index("matrix_imag")
+
+        for row in csv_reader:
+            # Safely parse molecule index
+            try:
+                idx = int(row[0])
+            except ValueError:
+                continue
+
+            # Skip if not in qm9_dict
+            if idx not in qm9_dict:
+                continue
+
+            # Parse real & imaginary strings
+            real_str = row[matrix_real_idx]
+            imag_str = row[matrix_imag_idx]
+            try:
+                real_3x3 = json.loads(real_str)  # shape [3,3]
+                imag_3x3 = json.loads(imag_str)  # shape [3,3]
+            except json.JSONDecodeError:
+                continue
+
+            # Flatten to shape [9]
+            real_mat = torch.tensor(real_3x3, dtype=torch.float32).view(-1)
+            imag_mat = torch.tensor(imag_3x3, dtype=torch.float32).view(-1)
+
+            all_real_parts.append(real_mat.numpy())
+            all_imag_parts.append(imag_mat.numpy())
+
+    if not all_real_parts:
+        # No valid data found; return zeros to avoid errors
+        # or raise an Exception, depending on your preference
+        return np.zeros(9), np.ones(9), np.zeros(9), np.ones(9)
+
+    # Convert to numpy
+    all_real_parts = np.array(all_real_parts)  # shape [N, 9]
+    all_imag_parts = np.array(all_imag_parts)  # shape [N, 9]
+
+    # Compute mean, std (add a small eps to std to avoid division by 0)
+    eps = 1e-12
+    real_mean = all_real_parts.mean(axis=0)
+    real_std = all_real_parts.std(axis=0) + eps
+    imag_mean = all_imag_parts.mean(axis=0)
+    imag_std = all_imag_parts.std(axis=0) + eps
+
+    return real_mean, real_std, imag_mean, imag_std
+
+
+def normalize_polarizability(real_3x3, imag_3x3, real_mean, real_std, imag_mean, imag_std):
+    """
+    Normalizes the real and imaginary parts of the 3x3 polarizability
+    using separate mean/std for each part, then returns a tensor of
+    shape [3, 6]:
+      - The first 3 columns are the real part (normalized),
+      - The last 3 columns are the imaginary part (normalized).
+    """
+
+    real_3x3_np = np.array(real_3x3, dtype=np.float32)  # shape [3,3]
+    imag_3x3_np = np.array(imag_3x3, dtype=np.float32)  # shape [3,3]
+
+    # Flatten => shape [9]
+    real_mat_flat = real_3x3_np.flatten()
+    imag_mat_flat = imag_3x3_np.flatten()
+
+    # Standard scaling: (value - mean) / std
+    real_norm_flat = (real_mat_flat - real_mean) / real_std  # shape [9]
+    imag_norm_flat = (imag_mat_flat - imag_mean) / imag_std  # shape [9]
+
+    # Convert back to torch and reshape each one to [3,3]
+    real_norm_3x3 = torch.from_numpy(real_norm_flat).float().view(3, 3)  # shape [3,3]
+    imag_norm_3x3 = torch.from_numpy(imag_norm_flat).float().view(3, 3)  # shape [3,3]
+
+    # Concatenate them along the columns => shape [3, 6]
+    y_norm_3x6 = torch.cat([real_norm_3x3, imag_norm_3x3], dim=-1)  # shape [3,6]
+
+    return y_norm_3x6
+
+
+
+
+
+def load_frequencies(csv_path):
+    frequencies = []
+    with open(csv_path, newline='', encoding='utf-8') as csvfile:
+        csv_reader = csv.reader(csvfile, delimiter=',')
+        header = next(csv_reader)
+        freq_idx = header.index("frequency")
+
+        for row in csv_reader:
+            if not row:
+                continue
+            try:
+                f_val = float(row[freq_idx])
+                frequencies.append(f_val)
+            except ValueError:
+                # skip invalid freq
+                pass
+    return frequencies
+
+
+def load_unique_frequencies(csv_path):
+    frequencies = []
+    with open(csv_path, newline='', encoding='utf-8') as csvfile:
+        csv_reader = csv.reader(csvfile, delimiter=',')
+        header = next(csv_reader)
+        freq_idx = header.index("frequency")
+
+        for row in csv_reader:
+            if not row:
+                continue
+            try:
+                f_val = float(row[freq_idx])
+                frequencies.append(f_val)
+            except ValueError:
+                # skip invalid freq
+                pass
+    return list(set(frequencies))
+
+
+        
+def get_closest_spectrum_value(dataset_dict, molecule_id, target_freq):
+    """
+    Finds the closest frequency to `target_freq` in the spectrum of `molecule_id`
+    and returns the corresponding value.
+
+    Parameters:
+    - dataset_dict: The dataset dictionary created by `load_spectra`.
+    - molecule_id: The string identifier for the molecule (as in the CSV).
+    - target_freq: The frequency you want to look up.
+
+    Returns:
+    - (closest_freq, value_at_closest_freq)
+    """
+    if molecule_id not in dataset_dict:
+        raise KeyError(f"Molecule ID '{molecule_id}' not found in dataset.")
+
+    freqs = dataset_dict[molecule_id]['frequencies']
+    values = dataset_dict[molecule_id]['values']
+
+    # Find index of closest frequency
+    closest_index = min(range(len(freqs)), key=lambda i: abs(freqs[i] - target_freq))
+
+    return values[closest_index]
+
+
+
+def sample_lorentzian_spectrum(frequencies, line_shapes):
+    """
+    Evaluate the total Lorentzian spectrum by summing over each line-shape function.
+
+    :param frequencies: list or array of frequencies (e.g. value['freqs'])
+    :param line_shapes: list of partial(...) line-shape callables
+    :return: numpy array with the total intensity at each frequency
+    """
+    sampled_values = np.zeros_like(frequencies, dtype=float)
+    for shape_func in line_shapes:
+        # shape_func is something like partial(lorentzian_func, center=f, amplitude=a, gamma=...)
+        # Evaluate at all frequencies and accumulate
+        sampled_values += np.array([shape_func(freq) for freq in frequencies])
+    return sampled_values
+
+
+
+from geomloss import SamplesLoss
+
+def sinkhorn_loss(predicted, target):
+    """
+    Compute the Sinkhorn loss between two point clouds.
+    
+    Args:
+        predicted (torch.Tensor): Predicted point cloud of shape (batch_size, n_points, 1).
+        target (torch.Tensor): Target point cloud of shape (batch_size, n_points, 1).
+    
+    Returns:
+        torch.Tensor: Sinkhorn loss value.
+    """
+    # Ensure the input tensors are of the correct shape
+    if predicted.shape != target.shape:
+        raise ValueError(f"predicted and target must have the same shape, got {predicted.shape} vs {target.shape}")
+
+    # Sinkhorn loss (blur=regularization, scaling=0.5 for 62 points)
+    sinkhorn_loss = SamplesLoss(loss="sinkhorn", p=2, blur=0.05, scaling=0.5)
+
+    # Reshape spectra as "point clouds" (batch_size, n_points, 1)
+    # Note: Sinkhorn treats each point as a 1D mass (even if input is 1D).
+    target_points = target.unsqueeze(-1)  # shape (16, 62, 1)s
+    pred_points = predicted.unsqueeze(-1)
+
+    loss = sinkhorn_loss(pred_points, target_points)
+    print(loss.item())
+
+    return loss
+
+
+def fun_sinkhorn_loss(pred, target):
+    return sinkhorn_loss(pred, target)
+
+
+
+
+def lorentzian_func(x, center, amplitude, gamma=0.05):
+    """
+    Basic Lorentzian function:
+      amplitude / [1 + ((x - center) / gamma)^2]
+    """
+    return amplitude / (1.0 + ((x - center) / gamma)**2)
+
+def gaussian_func(x, center, amplitude, sigma=0.5):
+    """
+    Basic Gaussian function:
+      amplitude * exp( -((x - center)^2 / (2 * sigma^2)) )
+    """
+    exponent = -((x - center)**2) / (2.0 * sigma**2)
+    return amplitude * np.exp(exponent)
+
+def load_spectra(positions, osc_strength, fun_type="l", width_param=0.05):
+
+    # Convert them to floats (the intensities)
+    numeric_pos = [float(v) for v in positions]
+    numeric_osc_strength = [float(v) for v in osc_strength]
+
+    # Create line-shape callables for each frequency/intensity pair
+    # partial(...) => returns a function f(x)
+    if fun_type == "l":
+        # Lorentzian
+        line_shapes = [
+            partial(lorentzian_func, center=f, amplitude=a, gamma=width_param)
+            for f, a in zip(numeric_pos, numeric_osc_strength)
+        ]
+    else:
+        # Gaussian
+        line_shapes = [
+            partial(gaussian_func, center=f, amplitude=a, sigma=width_param)
+            for f, a in zip(numeric_pos, numeric_osc_strength)
+        ]
+
+    return line_shapes
