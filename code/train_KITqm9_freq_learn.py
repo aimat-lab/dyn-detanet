@@ -30,14 +30,15 @@ import wandb
 import random
 random.seed(42)
 
-batch_size = 128
-epochs = 50
+batch_size = 64
+epochs = 5
 lr=5e-4
 
 high_spec_cutoff = 0.1
 low_fraction = 0.02
 
-fine_tune = True
+balance = False
+fine_tune = False
 
 ##dataset = load_dataset(csv_path=csv_path, qm9_path=qm9_path)
 
@@ -54,7 +55,7 @@ csv_path_geometries = data_dir + "/KITqm9_geometries.csv"
 geometries = ut.load_geometry(csv_path_geometries)
 
 csv_spectra = data_dir + "/DATA_QM9_reduced_2025_03_06.csv"
-sprectras = ut.load_spectra(csv_spectra)
+spectras = ut.load_spectra_with_profiles(csv_spectra)
 
 count = 0
 
@@ -92,7 +93,8 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
             continue        
         pos = mol.pos
         z = mol.z
-        spectrum_value = ut.get_closest_spectrum_value(sprectras, idx, freq_val)
+        spectrum_funcs = spectras[idx]['fun']  # This is a list      
+        spectrum_value = sum(func(freq_val) for func in spectrum_funcs)
 
         # Parse JSON for real matrix
         matrix_real_str = row[matrix_real_idx]
@@ -124,7 +126,7 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
         )
         spec_data.append(data_entry)
 
-        if fine_tune:
+        if balance:
             if spectrum_value > high_spec_cutoff:
                 dataset.append(data_entry)
                 count += 1
@@ -133,12 +135,12 @@ with open(csv_path, newline='', encoding='utf-8') as csvfile:
                 if random.random() < low_fraction:
                     dataset.append(data_entry)
         else:
-            if spectrum_value < 0.000005:
+            if spectrum_value < 0.05:
                 dataset.append(data_entry)
-                count += 1
-
-                
-
+                count += 1    
+            if len(dataset) == 10000:
+                break       
+        
 
 print(f"Collected {count} high-spec (>0.1) entries.")
 print(f"Total dataset length: {len(dataset)}")
@@ -331,8 +333,8 @@ print(f"Validation set size: {len(val_datasets)}")
 
 '''Using torch_Geometric.dataloader.DataLoader Converts a dataset into a batch of 64 molecules of training data.'''
 
-trainloader=DataLoader(train_datasets,batch_size=batch_size,shuffle=True)
-valloader=DataLoader(val_datasets,batch_size=batch_size,shuffle=True)
+trainloader=DataLoader(train_datasets,batch_size=batch_size,shuffle=True, drop_last=True)
+valloader=DataLoader(val_datasets,batch_size=batch_size,shuffle=True, drop_last=True)
 
 logging.basicConfig(
     filename=parent_dir + "/log/train_detanet.log", # '/pfs/work7/workspace/scratch/pf1892-ws/logs/training_detaNet.log',
@@ -344,7 +346,7 @@ logging.info(f"torch.cuda.is_available() {torch.cuda.is_available()}")
 wandb.init(
     # set the wandb project where this run will be logged
     project="Detanet-freq-learn",
-    name=f"All_freqs_freq-emb_with_N", 
+    name=f"freq-readout", 
     # track hyperparameters and run metadata
     config={
     "learning_rate": lr,
