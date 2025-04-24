@@ -6,6 +6,7 @@ from torch_geometric.nn import radius_graph
 from .modules import Interaction_Block,Embedding,Radial_Basis,MLP,Equivariant_Multilayer, FrequencyEmbedding
 from torch.autograd import grad
 from torch_scatter import scatter
+import torch.nn.functional as F
 """Deep equivariant tensor attention Network(DetaNet) graph neural network model"""
 
 '''Irreducible Representations(irreps) of vectorial and tensorial feature
@@ -118,9 +119,7 @@ class DetaNet(nn.Module):
         """
         super(DetaNet,self).__init__()
         assert num_features%attention_head==0,'attention head must be divisible by the number of features'
-        num_features = num_features + attention_head # Change the number of num_features
-        self.attention_head = attention_head
-        
+                
         self.scale=scale
         self.ref=atom_ref
         self.norm=norm
@@ -139,11 +138,17 @@ class DetaNet(nn.Module):
         irrs_sh=o3.Irreps.spherical_harmonics(lmax=maxl, p=-1)
         # Removal of scalars with l=0
         self.irreps_sh=irrs_sh[1:]
+
+        self.s_features = num_features // 2
+
         #self.Embedding=Embedding(num_features=num_features,act=act,device=device,max_atomic_number=max_atomic_number)
-        self.Embedding=Embedding(num_features=num_features-attention_head,act=act,device=device,max_atomic_number=max_atomic_number) # Keep the original embedding size   
+        self.Embedding=Embedding(num_features=self.s_features,act=act,device=device,max_atomic_number=max_atomic_number) # Keep the original embedding size   
         self.Radial=Radial_Basis(radial_type=radial_type,num_radial=num_radial,use_cutoff=use_cutoff)
 
-        self.FreqEmbedding=FrequencyEmbedding(embed_dim=num_features)
+        #self.FreqEmbedding=FrequencyEmbedding(embed_dim=num_features)
+        self.num_pol_spectra = 62
+
+
         blocks = []
         # interaction layers
         for _ in range(num_block):
@@ -411,13 +416,23 @@ class DetaNet(nn.Module):
 
         #Embedding of atomic types into scalar features (via one-hot nuclear and electronic features)
         S=self.Embedding(z)
+        #print("s shape", S.shape)
 
         # Concatenate spectrum
-        if spec is not None and batch is not None:
-            spec_per_atom = spec[batch]
-            spec_per_atom = spec_per_atom.unsqueeze(-1)
-            spec_broadcast = spec_per_atom.repeat(1, self.attention_head)
-            S = torch.cat([S, spec_broadcast], dim=-1)
+        if spectra is not None and freqs is not None:
+            spec_per_atom = spectra
+            freqs_per_atom = freqs
+
+            sf = torch.cat([spec_per_atom, freqs_per_atom], dim=-1)  # shape [n_atoms, 2 * num_spectra]
+            padding = self.s_features - sf.shape[-1]
+            sf = F.pad(sf, (0, padding), mode='constant', value=0)
+            #print("spectra per atom shape", spec_per_atom.shape)
+            #print("freqs per atom shape", freqs_per_atom.shape)
+            #print("sf shape", sf.shape)
+            S = torch.cat([S, sf], dim=-1)
+
+        
+        #print("s shape", S.shape)
 
         T=torch.zeros(size=(S.shape[0],self.vdim),device=S.device,dtype=S.dtype)
         i,j=edge_index

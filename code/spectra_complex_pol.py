@@ -11,8 +11,8 @@ from detanet_model import *
 # Config
 # -------------------------------
 random.seed(42)
-batch_size = 64
-epochs = 100
+batch_size = 32
+epochs = 75
 lr = 5e-4
 
 normalize = False
@@ -30,6 +30,16 @@ print(f"Combined dataset size: {len(dataset)}")
 ex1 = dataset[0]
 print("ex1:", ex1)  # Only if y is defined
 
+for data in dataset:
+    num_molecules = data.z.shape[0]
+    #print("num_molecules:", num_molecules)
+
+    #repeat spectra for every molecule
+    #print("before ", data.spectra.shape)
+    data.spectra = data.spectra.repeat(num_molecules, 1)
+    data.freqs = data.freqs.repeat(num_molecules, 1)
+    #print("after ", data.spectra.shape)    
+
 # -------------------------------
 # Shuffle & Train/Val Split
 # -------------------------------
@@ -40,8 +50,8 @@ split_index = int(train_frac * len(dataset))
 train_datasets = dataset[:split_index]
 val_datasets   = dataset[split_index:]
 
-for mol in val_datasets:
-    print("val mol:", mol.idx, mol.dataset_name)
+#for mol in val_datasets:
+ #   print("val mol:", mol.idx, mol.dataset_name)
 
     
 print(f"Training set size: {len(train_datasets)}")
@@ -54,9 +64,10 @@ valloader   = DataLoader(val_datasets,   batch_size=batch_size, shuffle=False, d
 # -------------------------------
 # Initialize Weights & Biases (WandB)
 # -------------------------------
+name=f"Detanet-pol-spec-lr{lr}-bs{batch_size}-epochs{epochs}"
 wandb.init(
     project="Detanet-pol-spec",
-    name="HOPVKITqm9-imag",
+    name=name,
     config={
        "learning_rate": lr,
        "architecture": "GNN",
@@ -71,7 +82,7 @@ wandb.init(
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 model = DetaNet(
-    num_features=128,
+    num_features=256,
     act='swish',
     maxl=3,
     num_block=3,
@@ -88,7 +99,7 @@ model = DetaNet(
     irreps_out='124x2e',
     summation=True,
     norm=False,
-    out_type='complex_61_tensor', # e.g. your custom config
+    out_type='complex_multi_tensor', # e.g. your custom config
     grad_type=None,
     device=device
 )
@@ -115,4 +126,4 @@ trainer_ = trainer.Trainer(
 
 trainer_.train(num_train=epochs, targ='polar')
 
-torch.save(model.state_dict(), os.path.join(current_dir, 'trained_param', 'pol_spec_imag.pth'))
+torch.save(model.state_dict(), os.path.join(current_dir, 'trained_param', name + '.pth'))

@@ -52,7 +52,7 @@ class Trainer:
             self.optimizer,
             mode='min',
             factor=0.75,   # how much to reduce the LR by
-            patience=10,   # how many epochs to wait before reducing
+            patience=5,   # how many epochs to wait before reducing
             min_lr=1e-10,  # do not reduce beyond 1e-10
             verbose=True
         )
@@ -125,7 +125,7 @@ class Trainer:
                 self.model.eval()
                 running_val_loss_full = 0.0
                 val_mae = 0.0
-                val_R2 = 0.0
+                val_R2_v = 0.0
                 val_count = 0
                 with torch.no_grad():
                     for val_batch in self.val_data:
