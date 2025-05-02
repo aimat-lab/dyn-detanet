@@ -3,7 +3,7 @@ from e3nn import o3,io
 from torch import nn,FloatTensor
 from .constant import atom_masses
 from torch_geometric.nn import radius_graph
-from .modules import Interaction_Block,Embedding,Radial_Basis,MLP,Equivariant_Multilayer
+from .modules import Interaction_Block,Embedding,Radial_Basis,MLP,Equivariant_Multilayer, FrequencyEmbedding
 from torch.autograd import grad
 from torch_scatter import scatter
 """Deep equivariant tensor attention Network(DetaNet) graph neural network model"""
@@ -138,6 +138,8 @@ class DetaNet(nn.Module):
         self.irreps_sh=irrs_sh[1:]
         self.Embedding=Embedding(num_features=num_features,act=act,device=device,max_atomic_number=max_atomic_number)
         self.Radial=Radial_Basis(radial_type=radial_type,num_radial=num_radial,use_cutoff=use_cutoff)
+
+        self.FreqEmbedding=FrequencyEmbedding(embed_dim=num_features)
         blocks = []
         # interaction layers
         for _ in range(num_block):
@@ -166,8 +168,18 @@ class DetaNet(nn.Module):
         if out_type == '2_tensor':
             self.ct = io.CartesianTensor('ij=ji')
 
+        if out_type == 'complex_2_tensor':
+            self.ct = io.CartesianTensor('ij=ji')
+
+        if out_type == "cal_multi_tensor":
+            self.ct = io.CartesianTensor("ij=ji")
+
+        if out_type == 'complex_multi_tensor':
+            self.ct = io.CartesianTensor('ij=ji')
+
         elif out_type == '3_tensor':
             self.ct = io.CartesianTensor("ijk=jik=ikj")
+
 
         #Taking 6 matrix elements of the polarizability tensor (3x3) (9 of which 3 are symmetric, so there are 6).
         # Used to reduce calculation cost when calculating the derivative of polarizability
@@ -229,6 +241,89 @@ class DetaNet(nn.Module):
         tb=o3.spherical_harmonics(l='3o',x=ra,normalize=False)*sb
         return self.ct.to_cartesian(outt+torch.concat(tensors=(ta,tb),dim=-1))
 
+    def cal_complex_p_tensor(self, z, pos, batch, outs, outt):
+        #    sa_re, sb_re => real-part scalars
+        #    sa_im, sb_im => imaginary-part scalars
+        sa_re, sb_re, sa_im, sb_im = torch.split(outs, 1, dim=-1)
+        ra = self.centroid_coordinate(z=z, pos=pos, batch=batch)
+        sh_2e = o3.spherical_harmonics(l='2e', x=ra, normalize=False)
+        outt_re, outt_im = torch.split(outt, 5, dim=-1)
+        ta_re = sh_2e * sa_re
+        real_vec = torch.cat([sb_re, outt_re + ta_re], dim=-1)  # shape [..., 6]
+        ta_im = sh_2e * sa_im
+        imag_vec = torch.cat([sb_im, outt_im + ta_im], dim=-1)  # shape [..., 6]
+        #    The first 6 for the real matrix, next 6 for the imaginary matrix
+        complex_12 = torch.cat([real_vec, imag_vec], dim=-1)  # shape [..., 12]
+
+        return complex_12
+
+
+    def cal_multi_tensor(self, z, pos, batch, outs, outt, freq=None):
+
+        B = outs.size(0)
+        scales = outs.view(B, self.num_pol_spectra, 2)  # shape [B, self.num_pol_spectra, 2]
+
+        ra = self.centroid_coordinate(z=z, pos=pos, batch=batch)
+        sh = o3.spherical_harmonics(l="2e", x=ra, normalize=False)
+
+        # Expand across frequencies => shape [B, 1, 5] => [B, self.num_pol_spectra, 5]
+        sh = sh.unsqueeze(1).expand(-1, self.num_pol_spectra, -1)
+
+        # Extract real & imag scale factors => shape [B, self.num_pol_spectra]
+        sa = scales[..., 0]
+        sb = scales[..., 1]
+
+        # Multiply to get ta_re & ta_im => each shape [B, self.num_pol_spectra, 5]
+        ta = sh * sa.unsqueeze(-1)
+
+        C = outt.size(0)
+        outt = outt.view(C, self.num_pol_spectra, 5)
+
+        out = self.ct.to_cartesian(
+            torch.cat([sb.unsqueeze(-1), outt + ta], dim=-1)
+        )  
+        return out
+    
+    def cal_complex_multi_tensor(self, z, pos, batch, outs, outt, freq=None):
+
+        B = outs.size(0)
+        scales = outs.view(B, self.num_pol_spectra, 4)  # shape [B, 61, 4]
+
+        ra = self.centroid_coordinate(z=z, pos=pos, batch=batch)
+        sh = o3.spherical_harmonics(l="2e", x=ra, normalize=False)
+
+        # Expand across frequencies => shape [B, 1, 5] => [B, 61, 5]
+        sh = sh.unsqueeze(1).expand(-1, self.num_pol_spectra, -1)
+
+        # Extract real & imag scale factors => shape [B, 61]
+        sa_re = scales[..., 0]
+        sa_im = scales[..., 1]
+        sb_re = scales[..., 2]
+        sb_im = scales[..., 3]
+
+        # Multiply to get ta_re & ta_im => each shape [B, 61, 5]
+        ta_re = sh * sa_re.unsqueeze(-1)
+        ta_im = sh * sa_im.unsqueeze(-1)
+
+        C = outt.size(0)
+        outt_reshaped = outt.view(C, self.num_pol_spectra, 10)
+        # outt_reshaped[..., :5] => real irreps, outt_reshaped[..., 5:] => imag irreps
+        outt_re, outt_im = torch.split(outt_reshaped, 5, dim=-1)
+
+        re = self.ct.to_cartesian(
+            torch.cat([sb_re.unsqueeze(-1), outt_re + ta_re], dim=-1)
+        )  # => shape [B,61, (2 + 5)] => [B,61,7], then 'to_cartesian' returns e.g. [B,61,3]
+
+        im = self.ct.to_cartesian(
+            torch.cat([sb_im.unsqueeze(-1), outt_im + ta_im], dim=-1)
+        )  # => shape [B,61,7] => [B,61,3]
+
+        # Cat real & imaginary => shape [B,61,6]
+        out = torch.cat([re, im], dim=-1)
+
+        return out
+
+
     def grad_hess_ij(self, energy, posj, posi, create_graph=True):
         '''Calculating the inter-atomic part of hessian matrices.Find the cross-derivative for the coordinates
          of atom i and atom j that interact on the interaction layer.
@@ -284,12 +379,16 @@ class DetaNet(nn.Module):
     def forward(self,
                 z,
                 pos,
+                spectra=None,
+                freqs=None,
                 edge_index=None,
                 batch=None):
         '''
         z:Atomic number, LongTensor of shape [num_atom]
 
         pos: Atomic coordinates,FloatTensor with shape [num_atom,3]
+
+        freq: Frequency of applied energy field, Float Tensor??
 
         edge_index:Index of edge, LongTensor of shape [2,num_edge], default is None, if None
          it will be automatically generated in the model according to the cutoff radius rc.
@@ -306,10 +405,21 @@ class DetaNet(nn.Module):
         if edge_index is None:
             edge_index=radius_graph(x=pos,r=self.rc,batch=batch)
 
-        #Embedding of atomic types into scalar features (via one-hot nuclear and electronic features)
-        S=self.Embedding(z)
+
+        if freqs is not None:
+            freq_emb_batch = self.FreqEmbedding(freqs)  # shape [batch_size, embed_dim]
+            freq_emb_atoms = freq_emb_batch[batch]     # shape [n_atoms, embed_dim]
+            #Embedding of atomic types into scalar features (via one-hot nuclear and electronic features)
+            S=self.Embedding(z, freq_emb_atoms)
+        else:
+            #Embedding of atomic types into scalar features (via one-hot nuclear and electronic features)
+            S=self.Embedding(z)
+        
         T=torch.zeros(size=(S.shape[0],self.vdim),device=S.device,dtype=S.dtype)
         i,j=edge_index
+
+        
+        # does not work: SF = torch.cat([S, F], dim=-1)  # shape [n_atoms, base_scalar_dim + embed_dim]
 
         #If it is necessary to obtain the atomic part of the hessian, the 2 sets of coordinates
         # of the generated i and j atoms need to be recorded.
@@ -361,6 +471,16 @@ class DetaNet(nn.Module):
 
         elif self.out_type=='latent':
             out=S,T
+        
+        elif self.out_type == 'complex_2_tensor':
+            out = self.cal_complex_p_tensor(z=z,pos=pos,batch=batch,outs=outs,outt=outt)
+        
+        elif self.out_type == 'complex_multi_tensor':
+            out = self.cal_complex_multi_tensor(z=z,pos=pos,batch=batch,outs=outs,outt=outt)
+    
+        elif self.out_type == 'cal_multi_tensor':
+            out = self.cal_multi_tensor(z=z,pos=pos,batch=batch,outs=outs,outt=outt)
+
         else:
             out=outs,outt
 
