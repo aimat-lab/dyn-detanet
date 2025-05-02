@@ -6,6 +6,8 @@ from torch_geometric.nn import radius_graph
 from .modules import Interaction_Block,Embedding,Radial_Basis,MLP,Equivariant_Multilayer, FrequencyEmbedding
 from torch.autograd import grad
 from torch_scatter import scatter
+
+import torch.nn.functional as F
 """Deep equivariant tensor attention Network(DetaNet) graph neural network model"""
 
 '''Irreducible Representations(irreps) of vectorial and tensorial feature
@@ -136,7 +138,10 @@ class DetaNet(nn.Module):
         irrs_sh=o3.Irreps.spherical_harmonics(lmax=maxl, p=-1)
         # Removal of scalars with l=0
         self.irreps_sh=irrs_sh[1:]
-        self.Embedding=Embedding(num_features=num_features,act=act,device=device,max_atomic_number=max_atomic_number)
+
+        self.s_features= num_features // 2
+
+        self.Embedding=Embedding(num_features=self.s_features,act=act,device=device,max_atomic_number=max_atomic_number)
         self.Radial=Radial_Basis(radial_type=radial_type,num_radial=num_radial,use_cutoff=use_cutoff)
 
         self.FreqEmbedding=FrequencyEmbedding(embed_dim=num_features)
