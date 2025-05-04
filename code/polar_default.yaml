@@ -1,0 +1,27 @@
+# save as configs/imag_default.yaml
+project: add-scalar-sweep
+
+# data
+seed: 42
+data_file: ../data/KITqm9_dataset.pt
+train_fraction: 0.9
+batch_size: 64
+normalize: false
+
+# optimisation
+epochs: 85
+lr: 5.0e-4
+weight_decay: 0.0
+optimizer: AdamW
+
+# model (arguments forwarded to DetaNet)
+cutoff: 5.0
+num_block: 3
+num_features: 128
+scalar_outsize: 248   # 4*62
+irreps_out: 124x2e
+out_type: cal_multi_tensor
+finetune: false
+finetune_file: ""
+
+target: y

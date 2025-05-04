@@ -148,7 +148,7 @@ class DetaNet(nn.Module):
         blocks = []
 
 
-        self.num_pol_spectra = num_features // 2
+        self.num_pol_spectra = scalar_outsize // 2
 
         # interaction layers
         for _ in range(num_block):
@@ -245,8 +245,7 @@ class DetaNet(nn.Module):
         return self.ct.to_cartesian(outt+torch.concat(tensors=(ta,tb),dim=-1))
 
 
-    def cal_multi_tensor(self, z, pos, batch, outs, outt, freq=None):
-
+    def cal_multi_tensor(self, z, pos, batch, outs, outt):
         B = outs.size(0)
         scales = outs.view(B, self.num_pol_spectra, 2)  # shape [B, self.num_pol_spectra, 2]
         ra = self.centroid_coordinate(z=z, pos=pos, batch=batch)
@@ -321,7 +320,7 @@ class DetaNet(nn.Module):
                 z,
                 pos,
                 spectra=None,
-                freqs=None,
+                freq=None,
                 edge_index=None,
                 batch=None):
         '''
@@ -348,19 +347,16 @@ class DetaNet(nn.Module):
 
         S=self.Embedding(z)
         
-        if spectra is not None and freqs is not None:
-            spec_per_atom = torch.cat([spectra, freqs], dim = -1)
-            padding = self.s_features - spec_per_atom.shape[1]
-
-            sf = F.pad(spec_per_atom, (0, padding), value = 0)
+        if spectra is not None and freq is not None:
+            emb = torch.cat([spectra, freq], dim = -1)
+            padding = self.s_features - emb.shape[1]
+            sf = F.pad(emb, (0, padding), value = 0)
             S = torch.cat([S, sf], dim = -1)
 
-        if spectra is not None:
+        elif spectra is not None:
             padding = self.s_features - spectra.shape[1]
-
             sf = F.pad(spectra, (0, padding), value = 0)
             S = torch.cat([S, sf], dim = -1)
-
 
 
         T=torch.zeros(size=(S.shape[0],self.vdim),device=S.device,dtype=S.dtype)
