@@ -4,7 +4,6 @@ from torch import nn,FloatTensor
 from .constant import atom_masses
 from torch_geometric.nn import radius_graph
 from .modules import Interaction_Block,Embedding,Radial_Basis,MLP,Equivariant_Multilayer
-from .modules import Interaction_Block,Embedding,Radial_Basis,MLP,Equivariant_Multilayer
 from torch.autograd import grad
 from torch_scatter import scatter
 
@@ -141,13 +140,11 @@ class DetaNet(nn.Module):
         # Removal of scalars with l=0
         self.irreps_sh=irrs_sh[1:]
 
-        self.s_features = num_features // 2
 
         #self.Embedding=Embedding(num_features=num_features,act=act,device=device,max_atomic_number=max_atomic_number)
         self.Embedding=Embedding(num_features=self.s_features,act=act,device=device,max_atomic_number=max_atomic_number) # Keep the original embedding size   
         self.Radial=Radial_Basis(radial_type=radial_type,num_radial=num_radial,use_cutoff=use_cutoff)
 
-        self.FreqEmbedding=FrequencyEmbedding(embed_dim=num_features)
         blocks = []
         # interaction layers
         for _ in range(num_block):
