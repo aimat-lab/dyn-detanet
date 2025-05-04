@@ -3,7 +3,7 @@ from e3nn import o3,io
 from torch import nn,FloatTensor
 from .constant import atom_masses
 from torch_geometric.nn import radius_graph
-from .modules import Interaction_Block,Embedding,Radial_Basis,MLP,Equivariant_Multilayer, FrequencyEmbedding
+from .modules import Interaction_Block,Embedding,Radial_Basis,MLP,Equivariant_Multilayer
 from torch.autograd import grad
 from torch_scatter import scatter
 import torch.nn.functional as F

@@ -19,7 +19,7 @@ class Interaction_Block(nn.Module):
         self.update=Update(num_features=num_features,act=act,irreps_mout=self.message.tp.irreps_out,
                            irreps_T=irreps_T,dropout=dropout)
 
-    def forward(self,S,T,rbf,sh,index, spec=None):
+    def forward(self,S,T,rbf,sh,index):
         mijt,mijs=self.message(S=S,rbf=rbf,sh=sh,index=index)
         T,S=self.update(T=T,S=S,mijt=mijt,mijs=mijs,index=index)
         return S,T

@@ -57,17 +57,6 @@ class Update(nn.Module):
                                 shared_weights=True)
         self.outs=nn.Linear(num_features,num_features)
         self.uattn=Tensorproduct_Attention(num_features=num_features,irreps_T=irreps_T,act=act)
-
-        # A small MLP to encode freq -> single scalar
-        #self.spec_lin = nn.Linear(1, 2, bias=True)
-        #self.spec_act = activations(act, num_features=2)
-        
-        hidden_dim = max(4, num_features // 4)  # example "mini" hidden size
-        self.spec_mlp = nn.Sequential(
-            nn.Linear(1, hidden_dim),
-            activations(act, num_features=hidden_dim),
-            nn.Linear(hidden_dim, 2)
-        )
         self.reset_parameters()
 
     def reset_parameters(self):
