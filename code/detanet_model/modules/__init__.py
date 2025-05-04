@@ -1,6 +1,5 @@
 from .edge_attention import Edge_Attention
 from .embedding import Embedding
-from .frequency_embedding import FrequencyEmbedding
 from .radial_basis import Radial_Basis
 from .message import Message
 from .update import Update

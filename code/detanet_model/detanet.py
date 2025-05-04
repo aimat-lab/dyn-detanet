@@ -3,7 +3,7 @@ from e3nn import o3,io
 from torch import nn,FloatTensor
 from .constant import atom_masses
 from torch_geometric.nn import radius_graph
-from .modules import Interaction_Block,Embedding,Radial_Basis,MLP,Equivariant_Multilayer, FrequencyEmbedding
+from .modules import Interaction_Block,Embedding,Radial_Basis,MLP,Equivariant_Multilayer
 from torch.autograd import grad
 from torch_scatter import scatter
 
@@ -143,13 +143,8 @@ class DetaNet(nn.Module):
 
         self.Embedding=Embedding(num_features=self.s_features,act=act,device=device,max_atomic_number=max_atomic_number)
         self.Radial=Radial_Basis(radial_type=radial_type,num_radial=num_radial,use_cutoff=use_cutoff)
-
-        self.FreqEmbedding=FrequencyEmbedding(embed_dim=num_features)
+        
         blocks = []
-
-
-        self.num_pol_spectra = scalar_outsize // 2
-
         # interaction layers
         for _ in range(num_block):
             block=Interaction_Block(num_features=num_features,
@@ -179,6 +174,7 @@ class DetaNet(nn.Module):
 
         if out_type == "cal_multi_tensor":
             self.ct = io.CartesianTensor("ij=ji")
+            self.num_pol_spectra = scalar_outsize // 2
 
         elif out_type == '3_tensor':
             self.ct = io.CartesianTensor("ijk=jik=ikj")
