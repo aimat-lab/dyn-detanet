@@ -20,3 +20,5 @@ conda install esri::torch-cluster
 pip install rdkit
 
 conda install pandas
+
+To start a sweep: python code/spectra_pol_yaml.py --config polar_default.yaml --sweep
