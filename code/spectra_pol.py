@@ -13,16 +13,17 @@ random.seed(42)
 batch_size = 32
 epochs = 100
 lr=0.0006
-cutoff=6.5
-num_block=5
+cutoff=10
+num_block=3
 num_features=256
+attention_head=16
 scalar_outsize= (4* 62)#(4*62)
 irreps_out= '124x2e'
 out_type = 'cal_multi_tensor'
-finetune = False
-finetune_file = "/home/maria/detanet_complex/code/trained_param/OPTpolar_70epochs_64batchsize_0.0009lr_6.0cutoff_6numblock_128features_onlyKITqm9_OPTIMIZED.pth"
+finetune = True
+finetune_file = '/media/maria/work_space/dyn-detanet/code/trained_param/pretty-sweep_polar_Falsenormalize_70epochs_32bs_0_0006855550241449846lr_3blocks.pth' # "/home/maria/detanet_complex/code/trained_param/OPTpolar_70epochs_64batchsize_0.0009lr_6.0cutoff_6numblock_128features_onlyKITqm9_OPTIMIZED.pth"
 target = 'y'
-dataset_name = 'KITqm9_dataset'
+dataset_name = 'HOPV_dataset'
 
 name = f"OPT_spectra_{epochs}epochs_{batch_size}batchsize_{lr}lr_{cutoff}cutoff_{num_block}numblock_{num_features}features_{dataset_name}"
 
@@ -94,13 +95,13 @@ wandb.init(
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-model = DetaNet(num_features=128,
+model = DetaNet(num_features=num_features,
                     act='swish',
                     maxl=3,
                     num_block=num_block, #3
                     radial_type='trainable_bessel',
                     num_radial=32,
-                    attention_head=8,
+                    attention_head=attention_head,
                     rc=cutoff, #5.0
                     dropout=0.0,
                     use_cutoff=False,
