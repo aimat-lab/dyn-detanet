@@ -13,7 +13,7 @@ import numpy as np
 from torch_geometric.loader import DataLoader
 
 # local imports
-import trainer_spectra
+import trainer
 from detanet_model import DetaNet, l2loss  
 
 def build_dataset(data_file: Path, normalize: bool):
@@ -26,7 +26,7 @@ def build_dataset(data_file: Path, normalize: bool):
     # concatenate real+imag → y and collect stats
     for data in dataset:
         data.y = torch.cat([data.real, data.imag], dim=0)
-        data.spectra = data.spectra.repeat(len(data.z), 1)
+        data.x = data.spectra.repeat(len(data.z), 1)
 
     return dataset
 
@@ -68,6 +68,12 @@ def run_training(base_cfg: Dict[str, Any]):
         f"{cfg['lr']}lr_{cfg['num_block']}blocks_{cfg['num_features']}features_onlyKITqm9"
     )
     print("Training name:", name)
+
+    save_dir = Path("trained_param")
+    save_dir.mkdir(exist_ok=True)
+    fname = name + ".pt"
+    print("Save dir:", save_dir)
+
     # --- device ---------------------------------------------------------------
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -79,7 +85,7 @@ def run_training(base_cfg: Dict[str, Any]):
         num_block          = cfg["num_block"],
         radial_type        = "trainable_bessel",
         num_radial         = 32,
-        attention_head     = 8,
+        attention_head     = cfg["attention_head"],
         rc                 = cfg["cutoff"],
         dropout            = 0.0,
         use_cutoff         = False,
@@ -92,6 +98,7 @@ def run_training(base_cfg: Dict[str, Any]):
         norm               = False,
         out_type           = cfg["out_type"],
         grad_type          = None,
+        x_features         = 62,
         device             = device,
     ).to(device)
 
@@ -103,7 +110,7 @@ def run_training(base_cfg: Dict[str, Any]):
     wandb.watch(model, log="all")
 
     # --- trainer --------------------------------------------------------------
-    trainer_ = trainer_spectra.Trainer(
+    trainer_ = trainer.Trainer(
         model,
         train_loader=train_loader,
         val_loader=val_loader,
@@ -116,11 +123,9 @@ def run_training(base_cfg: Dict[str, Any]):
     trainer_.train(num_train=cfg["epochs"], targ=cfg.get("target", "y"))
 
     # --- save -----------------------------------------------------------------
-    #save_dir = "trained_param"
-    #save_dir.mkdir(exist_ok=True)
-    #fname = name + ".pt"
-    #torch.save(model.state_dict(), save_dir / fname)
-    #print("Model saved to", save_dir / fname)
+
+    torch.save(model.state_dict(), save_dir / fname)
+    print("Model saved to", save_dir / fname)
 
 
 # -----------------------------------------------------------------------------
@@ -147,10 +152,14 @@ def main():
         raise ValueError("Config must be .yaml, .yml or .json")
 
     if args.sweep:
-        from sweep_utils import launch_random_sweep
-        launch_random_sweep(cfg_path,
-                            project=cfg.get("project", "deta-random"),
-                            trials=50)         # <-- change for bigger/smaller budgets
+        #from sweep_utils import launch_random_sweep
+        #launch_random_sweep(cfg_path,
+        #                    project=cfg.get("project", "deta-random"),
+        #                    trials=50)         # <-- change for bigger/smaller budgets
+        from sweep_bayes_utils import launch_bayesian_sweep
+        launch_bayesian_sweep(cfg_path,
+                              project=cfg.get("project", "deta-bayes"),
+                              trials=25)         # <-- change for bigger/smaller budgets       
         return
 
     print("Yaml:", cfg)

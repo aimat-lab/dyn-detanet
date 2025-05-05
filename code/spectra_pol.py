@@ -3,7 +3,7 @@ import os
 from torch_geometric.loader import DataLoader
 from torch_geometric.loader import DataLoader
 
-import trainer_spectra
+import trainer
 from detanet_model import *
 
 import wandb
@@ -13,8 +13,8 @@ random.seed(42)
 batch_size = 32
 epochs = 100
 lr=0.0006
-cutoff=7
-num_block=6
+cutoff=6.5
+num_block=5
 num_features=256
 scalar_outsize= (4* 62)#(4*62)
 irreps_out= '124x2e'
@@ -51,7 +51,7 @@ print("dataset[5] :", ex2,)
 for data in dataset:
     data.y = torch.cat([data.real, data.imag], dim=0)
     data.freq = data.freqs.repeat(len(data.z), 1)
-    data.spectra = data.spectra.repeat(len(data.z), 1)
+    data.x = data.spectra.repeat(len(data.z), 1)
 
 print("data.y.shape :", data.y.shape)
 
@@ -113,6 +113,7 @@ model = DetaNet(num_features=128,
                     norm=False,
                     out_type=out_type,
                     grad_type=None,
+                    x_features=62,
                     device=device)
 if finetune:
     state_dict=torch.load(finetune_file)
@@ -123,7 +124,7 @@ model.to(device)
 wandb.watch(model, log="all")
 
 
-trainer_ = trainer_spectra.Trainer(
+trainer_ = trainer.Trainer(
     model,
     train_loader=trainloader,
     val_loader=valloader,

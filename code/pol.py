@@ -54,14 +54,15 @@ for data in dataset:
     for i in range(data.real.shape[0]):
         y = torch.cat([data.real[i].unsqueeze(0), data.imag[i].unsqueeze(0)], dim=0)  # -> [2, 3, 3]
         freq = data.freqs[i]
+        x_features = torch.cat([freq, data.spectra], dim=-1)
+        print("x_features.shape :", x_features.shape)
     
         # Create the dataset entry
         data_entry = torch_geometric.data.Data(
             idx=data.idx,
             pos=data.pos,
             z=torch.LongTensor(data.z),
-            freq=freq.repeat(len(data.z), 1),
-            spectra=data.spectra.repeat(len(data.z), 1), 
+            x=x_features.repeat(len(x_features), 1),
             y=y      
         )
         ref_dataset.append(data_entry)
@@ -131,6 +132,7 @@ model = DetaNet(num_features=128,
                     norm=False,
                     out_type=out_type,
                     grad_type=None,
+                    x_features=63,
                     device=device)
 if finetune:
     state_dict=torch.load(finetune_file)

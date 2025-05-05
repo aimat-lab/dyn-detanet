@@ -49,6 +49,7 @@ class DetaNet(nn.Module):
                  norm:bool=False,
                  out_type:str='scalar',
                  grad_type:str=None,
+                 x_features:int=None,
                  device:torch.device=torch.device('cuda')):
         """Parameter introduction
     num_features:The dimension of the scalar feature and irreps feature(each order m), set to 128 by default.
@@ -139,11 +140,14 @@ class DetaNet(nn.Module):
         irrs_sh=o3.Irreps.spherical_harmonics(lmax=maxl, p=-1)
         # Removal of scalars with l=0
         self.irreps_sh=irrs_sh[1:]
-
-
-        #self.Embedding=Embedding(num_features=num_features,act=act,device=device,max_atomic_number=max_atomic_number)
-        self.Embedding=Embedding(num_features=self.s_features,act=act,device=device,max_atomic_number=max_atomic_number) # Keep the original embedding size   
         self.Radial=Radial_Basis(radial_type=radial_type,num_radial=num_radial,use_cutoff=use_cutoff)
+
+        if x_features is not None:
+            embed_features = num_features - x_features
+        else:
+            embed_features = num_features
+        #self.Embedding=Embedding(num_features=num_features,act=act,device=device,max_atomic_number=max_atomic_number)
+        self.Embedding=Embedding(num_features=embed_features,act=act,device=device,max_atomic_number=max_atomic_number) # Keep the original embedding size   
 
         blocks = []
         # interaction layers
@@ -316,8 +320,7 @@ class DetaNet(nn.Module):
     def forward(self,
                 z,
                 pos,
-                spectra=None,
-                freq=None,
+                x_features=None,
                 edge_index=None,
                 batch=None):
         '''
@@ -344,17 +347,8 @@ class DetaNet(nn.Module):
 
         S=self.Embedding(z)
         
-        if spectra is not None and freq is not None:
-            emb = torch.cat([spectra, freq], dim = -1)
-            padding = self.s_features - emb.shape[1]
-            sf = F.pad(emb, (0, padding), value = 0)
-            S = torch.cat([S, sf], dim = -1)
-
-        elif spectra is not None:
-            padding = self.s_features - spectra.shape[1]
-            sf = F.pad(spectra, (0, padding), value = 0)
-            S = torch.cat([S, sf], dim = -1)
-
+        if x_features is not None:
+            S = torch.cat([S, x_features], dim = -1)
 
         T=torch.zeros(size=(S.shape[0],self.vdim),device=S.device,dtype=S.dtype)
         i,j=edge_index

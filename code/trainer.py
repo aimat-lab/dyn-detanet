@@ -99,8 +99,7 @@ class Trainer:
                 out = self.model(
                     pos=batch.pos.to(self.device),
                     z=batch.z.to(self.device),
-                    freq=batch.freq.to(self.device),
-                    spectra=batch.spectra.to(self.device),
+                    x_features=batch.x.to(self.device),
                     batch=batch.batch.to(self.device)
                 )
 
@@ -138,15 +137,14 @@ class Trainer:
                         val_out = self.model(
                             pos=val_batch.pos.to(self.device),
                             z=val_batch.z.to(self.device),
-                            freq=val_batch.freq.to(self.device),
-                            spectra=val_batch.spectra.to(self.device),
+                            x_features=val_batch.x.to(self.device),
                             batch=val_batch.batch.to(self.device)
                         )
                         full_val_loss = self.loss_function(val_out.reshape(val_target.shape), val_target).item()
                         running_val_loss_full += full_val_loss
                         val_count += 1
 
-                        if epoch%1== 0:
+                        if epoch%10== 0:
                             #loss_emd += loss_emd(val_out.reshape(val_target.shape), val_target)
 
                             val_mae += l1loss(val_out.reshape(val_target.shape), val_target).item()
@@ -162,7 +160,7 @@ class Trainer:
                 # Average val metrics
                 avg_val_loss = running_val_loss_full / val_count
 
-                if epoch%1== 0:
+                if epoch%10== 0:
                     avg_val_mae = val_mae / val_count
                     avg_val_R = val_R2_v / val_count
                     avg_rf_rmse_loss = rf_rmse_loss / val_count

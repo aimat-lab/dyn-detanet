@@ -21,4 +21,4 @@ pip install rdkit
 
 conda install pandas
 
-To start a sweep: python code/spectra_pol_yaml.py --config polar_default.yaml --sweep
+To start a sweep: python spectra_pol_yaml.py --config polar_default.yaml --sweep
