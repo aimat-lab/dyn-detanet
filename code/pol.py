@@ -10,9 +10,9 @@ import wandb
 import random
 random.seed(42)
 
-batch_size = 16
-epochs = 1
-lr=5e-7 # TRY SMALLER LEARNING RATE
+batch_size = 256
+epochs = 10
+lr=5e-4 # TRY SMALLER LEARNING RATE
 cutoff=6.0
 num_block=6
 num_features=128
@@ -53,16 +53,16 @@ ref_dataset = []
 for data in dataset:
     for i in range(data.real.shape[0]):
         y = torch.cat([data.real[i].unsqueeze(0), data.imag[i].unsqueeze(0)], dim=0)  # -> [2, 3, 3]
-        freq = data.freqs[i]
-        x_features = torch.cat([freq, data.spectra], dim=-1)
-        print("x_features.shape :", x_features.shape)
-    
+        freq = data.freqs[i].unsqueeze(0)
+        spec_value = data.spectra[i].unsqueeze(0) 
+        x_features = torch.cat([freq, spec_value], dim=0)
+
         # Create the dataset entry
         data_entry = torch_geometric.data.Data(
             idx=data.idx,
             pos=data.pos,
             z=torch.LongTensor(data.z),
-            x=x_features.repeat(len(x_features), 1),
+            x=x_features.repeat(len(data.z), 1),
             y=y      
         )
         ref_dataset.append(data_entry)
@@ -132,7 +132,7 @@ model = DetaNet(num_features=128,
                     norm=False,
                     out_type=out_type,
                     grad_type=None,
-                    x_features=63,
+                    x_features=2,
                     device=device)
 if finetune:
     state_dict=torch.load(finetune_file)
