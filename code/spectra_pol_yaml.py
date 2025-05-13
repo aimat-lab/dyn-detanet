@@ -6,6 +6,8 @@ import os
 import random
 from pathlib import Path
 from typing import Dict, Any
+import wandb  # deferred import so CI can skip easily
+
 
 import yaml  # pip install pyyaml
 import torch
@@ -25,7 +27,7 @@ def build_dataset(data_file: Path, normalize: bool):
 
     # concatenate real+imag → y and collect stats
     for data in dataset:
-        data.y = torch.cat([data.real, data.imag], dim=0)
+        data.y = torch.cat([data.real_mm, data.imag_mm], dim=0)
         data.x = data.spectra.repeat(len(data.z), 1)
 
     return dataset
@@ -45,9 +47,8 @@ def run_training(base_cfg: Dict[str, Any]):
     """Train DetaNet according to the hyper‑parameters in *cfg*."""
 
     # --- wandb ----------------------------------------------------------------
-    import wandb  # deferred import so CI can skip easily
     wandb.init(
-        project=base_cfg.get("project", "test-imag"),
+        project=base_cfg.get("project", "pol-em-KITQM9"),
         config=base_cfg,             # ← W&B merges sweep overrides here
     )
 
@@ -59,13 +60,24 @@ def run_training(base_cfg: Dict[str, Any]):
     dataset = build_dataset(cfg["data_file"], cfg["normalize"])
     train_ds, val_ds = split_dataset(dataset, cfg["train_fraction"], cfg["seed"])
 
-    train_loader = DataLoader(train_ds, batch_size=cfg["batch_size"], shuffle=True, drop_last=True)
-    val_loader   = DataLoader(val_ds,   batch_size=cfg["batch_size"], shuffle=False, drop_last=True)
+    print(f"Training set size: {len(train_ds)}")
+    print(f"Validation set size: {len(val_ds)}")
+    # Print the indices of the validation set
+    val_dataset_to_print = []
+    for mol in val_ds:
+        val_dataset_to_print.append(str(mol.idx))
+    print("Validation set indices:", val_dataset_to_print)
+
+    train_loader = DataLoader(train_ds, batch_size=cfg["batch_size"], shuffle=True )
+    val_loader   = DataLoader(val_ds,   batch_size=cfg["batch_size"], shuffle=False)
+    
+    #    train_loader = DataLoader(train_ds, batch_size=cfg["batch_size"], shuffle=True, drop_last=True)
+    # val_loader   = DataLoader(val_ds,   batch_size=cfg["batch_size"], shuffle=False, drop_last=True)
 
     name = (
-        f"polar_{cfg['normalize']}normalize_"   # ← single quotes here
+        f"polar_mm_"   # ← single quotes here
         f"{cfg['epochs']}epochs_{cfg['batch_size']}bs_"
-        f"{cfg['lr']}lr_{cfg['num_block']}blocks_{cfg['num_features']}features_onlyKITqm9"
+        f"{cfg['lr']}lr_{cfg['num_block']}blocks_{cfg['num_features']}features_dataset_HOPV.pth"
     )
     print("Training name:", name)
 
@@ -85,7 +97,7 @@ def run_training(base_cfg: Dict[str, Any]):
         num_block          = cfg["num_block"],
         radial_type        = "trainable_bessel",
         num_radial         = 32,
-        attention_head     = cfg["attention_head"],
+        attention_head     = 8,# cfg["attention_head"],
         rc                 = cfg["cutoff"],
         dropout            = 0.0,
         use_cutoff         = False,
@@ -158,8 +170,12 @@ def main():
         #                    trials=50)         # <-- change for bigger/smaller budgets
         from sweep_bayes_utils import launch_bayesian_sweep
         launch_bayesian_sweep(cfg_path,
-                              project=cfg.get("project", "deta-bayes"),
-                              trials=25)         # <-- change for bigger/smaller budgets       
+                             project=cfg.get("project", "deta-bayes"),
+                             trials=25)         # <-- change for bigger/smaller budgets       
+        #wandb.agent(
+        #    "uorcz-karlsruhe-institute-of-technology/polar-mm-KITQM9/7fao84ng",
+        #    count=25)              # optional: how many runs to schedule
+        
         return
 
     print("Yaml:", cfg)

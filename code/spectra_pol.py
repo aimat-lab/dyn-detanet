@@ -10,22 +10,22 @@ import wandb
 import random
 random.seed(42)
 
-batch_size = 32
-epochs = 100
+batch_size = 1
+epochs = 80
 lr=0.0006
-cutoff=10
-num_block=3
+cutoff=3
+num_block=4
 num_features=256
-attention_head=16
+attention_head=8
 scalar_outsize= (4* 62)#(4*62)
-irreps_out= '124x2e'
-out_type = 'cal_multi_tensor'
-finetune = True
-finetune_file = '/media/maria/work_space/dyn-detanet/code/trained_param/pretty-sweep_polar_Falsenormalize_70epochs_32bs_0_0006855550241449846lr_3blocks.pth' # "/home/maria/detanet_complex/code/trained_param/OPTpolar_70epochs_64batchsize_0.0009lr_6.0cutoff_6numblock_128features_onlyKITqm9_OPTIMIZED.pth"
+irreps_out= '124x2e+124x1e'
+out_type = 'cal_multi_assymetric_tensor'
+finetune = False
+finetune_file = '/home/maria/dyn-detanet/code/trained_param/471_vibrant-sweep_polar_Falsenormalize_70epochs_32bs_0.0007335013870127138lr_6blocks_256features_onlyKITqm9.pth' # "/home/maria/detanet_complex/code/trained_param/OPTpolar_70epochs_64batchsize_0.0009lr_6.0cutoff_6numblock_128features_onlyKITqm9_OPTIMIZED.pth"
 target = 'y'
-dataset_name = 'HOPV_dataset'
+dataset_name = 'HOPV'
 
-name = f"OPT_spectra_{epochs}epochs_{batch_size}batchsize_{lr}lr_{cutoff}cutoff_{num_block}numblock_{num_features}features_{dataset_name}"
+name = f"NO_finetune_spectra_{epochs}epochs_{batch_size}batchsize_{lr}lr_{cutoff}cutoff_{num_block}numblock_{num_features}features_{dataset_name}"
 
 # -------------------------------
 
@@ -34,7 +34,6 @@ parent_dir = os.path.dirname(current_dir)
 data_dir = os.path.join(parent_dir, 'data')
 
 dataset = []
-spec_data = []
 
 # Load the dataset
 dataset = torch.load(os.path.join(data_dir, dataset_name + '.pt'))
@@ -50,8 +49,7 @@ print("dataset[5] :", ex2,)
 
 # No normalization
 for data in dataset:
-    data.y = torch.cat([data.real, data.imag], dim=0)
-    data.freq = data.freqs.repeat(len(data.z), 1)
+    data.y = torch.cat([data.real_em, data.imag_em], dim=0)
     data.x = data.spectra.repeat(len(data.z), 1)
 
 print("data.y.shape :", data.y.shape)
@@ -71,9 +69,12 @@ val_datasets   = dataset[split_index:]
 val_dataset_to_print = []
 for mol in val_datasets:
     val_dataset_to_print.append(str(mol.idx))
+print("Validation dataset indices:", val_dataset_to_print)
 
 print(f"Training set size: {len(train_datasets)}")
 print(f"Validation set size: {len(val_datasets)}")
+
+
 
 # Dataloaders
 trainloader = DataLoader(train_datasets, batch_size=batch_size, shuffle=True,  drop_last=True)

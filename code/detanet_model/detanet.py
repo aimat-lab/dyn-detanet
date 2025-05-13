@@ -265,6 +265,12 @@ class DetaNet(nn.Module):
         )  
         return out
     
+    def cal_multi_assymetric_tensor(self, z, pos, batch, outs, outt):
+        B = outs.size(0)
+        print("outs shape:", outs.shape)
+        print("outt shape:", outt.shape)
+
+    
     def grad_hess_ij(self, energy, posj, posi, create_graph=True):
         '''Calculating the inter-atomic part of hessian matrices.Find the cross-derivative for the coordinates
          of atom i and atom j that interact on the interaction layer.
@@ -408,6 +414,8 @@ class DetaNet(nn.Module):
     
         elif self.out_type == 'cal_multi_tensor':
             out = self.cal_multi_tensor(z=z,pos=pos,batch=batch,outs=outs,outt=outt)
+        elif self.out_type == 'cal_multi_assymetric_tensor':
+            out = self.cal_multi_assymetric_tensor(z=z,pos=pos,batch=batch,outs=outs,outt=outt)
 
         else:
             out=outs,outt

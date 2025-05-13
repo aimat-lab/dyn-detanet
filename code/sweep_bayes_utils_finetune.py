@@ -20,25 +20,13 @@ parameters:
     max: 1e-3
 
   cutoff:
-    values: [3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+    values: [3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
 
   batch_size:
     values: [8, 16, 32, 64]
 
-  num_radial:
-    values: [16, 32, 64, 128]
-
-  num_block:
-    values: [2, 3, 4, 5, 6]
-
-  attention_head:
-    values: [8, 16, 32, 64]
-
-  num_features:
-    values: [64, 128, 256]
-
   epochs:
-    values: [50, 60, 70, 80, 90, 100]
+    values: [70, 80, 90, 100, 110, 120]
 
 early_terminate:
   type: hyperband
@@ -72,4 +60,3 @@ def launch_bayesian_sweep(cfg_file: Path,
 
     # Run the agents
     wandb.agent(sweep_id, project=project, count=trials)
-
