@@ -22,3 +22,10 @@ pip install rdkit
 conda install pandas
 
 To start a sweep: python spectra_pol_yaml.py --config polar_default.yaml --sweep
+
+
+# TODO
+
+- Sweep Harvard OPV
+
+- Predict Harvard OPV without Finetuning (Also Sweep??)
