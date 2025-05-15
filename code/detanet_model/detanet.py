@@ -49,7 +49,7 @@ class DetaNet(nn.Module):
                  norm:bool=False,
                  out_type:str='scalar',
                  grad_type:str=None,
-                 x_features:int=None,
+                 x_features:int=0,
                  device:torch.device=torch.device('cuda')):
         """Parameter introduction
     num_features:The dimension of the scalar feature and irreps feature(each order m), set to 128 by default.
@@ -142,7 +142,7 @@ class DetaNet(nn.Module):
         self.irreps_sh=irrs_sh[1:]
         self.Radial=Radial_Basis(radial_type=radial_type,num_radial=num_radial,use_cutoff=use_cutoff)
 
-        if x_features is not None:
+        if x_features != 0:
             embed_features = num_features - x_features
         else:
             embed_features = num_features
@@ -177,8 +177,12 @@ class DetaNet(nn.Module):
         if out_type == '2_tensor':
             self.ct = io.CartesianTensor('ij=ji')
 
-        if out_type == "cal_multi_tensor":
+        if out_type == "multi_tensor":
             self.ct = io.CartesianTensor("ij=ji")
+            self.num_pol_spectra = scalar_outsize // 2
+
+        if out_type == "multi_assymetric_tensor":
+            self.ct = io.CartesianTensor("ij")
             self.num_pol_spectra = scalar_outsize // 2
 
         elif out_type == '3_tensor':
@@ -267,8 +271,25 @@ class DetaNet(nn.Module):
     
     def cal_multi_assymetric_tensor(self, z, pos, batch, outs, outt):
         B = outs.size(0)
-        print("outs shape:", outs.shape)
-        print("outt shape:", outt.shape)
+        scales = outs.view(B, self.num_pol_spectra, 2)  # shape [B, self.num_pol_spectra, 2]
+        # Extract real & imag scale factors => shape [B, self.num_pol_spectra]
+        sa = scales[..., 0]
+        sb = scales[..., 1]
+        ra = self.centroid_coordinate(z=z, pos=pos, batch=batch)
+        sh = o3.spherical_harmonics(l="1e + 2e", x=ra, normalize=False)
+        # Expand across frequencies => shape [B, 1, 8] => [B, self.num_pol_spectra, 8]
+        sh = sh.unsqueeze(1).expand(-1, self.num_pol_spectra, -1)
+        print("sh.shape :", sh.shape)
+
+        # Multiply to get ta_re & ta_im => each shape [B, self.num_pol_spectra, 8]
+        ta = sh * sa.unsqueeze(-1)
+
+        C = outt.size(0)
+        outt = outt.view(C, self.num_pol_spectra, 8) # [C, self.num_pol_spectra, 8]
+        out = self.ct.to_cartesian(
+            torch.cat([sb.unsqueeze(-1), outt + ta], dim=-1) # input to ct in shape [ trace | 1e | 2e ]
+        )  
+        return out
 
     
     def grad_hess_ij(self, energy, posj, posi, create_graph=True):
@@ -412,9 +433,10 @@ class DetaNet(nn.Module):
         elif self.out_type=='latent':
             out=S,T
     
-        elif self.out_type == 'cal_multi_tensor':
+        elif self.out_type == 'multi_tensor':
             out = self.cal_multi_tensor(z=z,pos=pos,batch=batch,outs=outs,outt=outt)
-        elif self.out_type == 'cal_multi_assymetric_tensor':
+
+        elif self.out_type == 'multi_assymetric_tensor':
             out = self.cal_multi_assymetric_tensor(z=z,pos=pos,batch=batch,outs=outs,outt=outt)
 
         else:

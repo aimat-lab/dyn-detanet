@@ -1,7 +1,7 @@
 import copy
 import os.path as osp
 import csv
-import code.util.utils as ut
+import code.utils as ut
 import pandas as pd
 
 import torch.nn as nn
