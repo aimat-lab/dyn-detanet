@@ -12,7 +12,7 @@ wandb
 /wandb/*
 *__pycache__*
 pycache/*
-*.pth
+# *.pth
 *.png
 
 # Byte-compiled / optimized / DLL files
@@ -22,6 +22,7 @@ __pycache__/
 __pycache__/
 *.py[cod]
 *$py.class
+code/__pycache__/
 
 # C extensions
 *.so
@@ -75,6 +76,8 @@ code/__pycache__/
 /code/__pycache__/
 **/__pycache__/**__pycache__/
 __pycache__/
+
+code/__pycache__
 
 /__pycache__/
 *.__pycache__*
