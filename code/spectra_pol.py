@@ -10,28 +10,28 @@ import wandb
 import random
 random.seed(42)
 
-batch_size = 16
+batch_size = 8
 epochs = 80
-lr=0.0009
-cutoff=6
-num_block=3
-num_features=128
+lr=1e-3
+cutoff=4
+num_block=4
+num_features=256
 attention_head=64
-num_radial=64
+num_radial=32
 
 scalar_outsize= (4* 62)#(4*62)
 irreps_out= '124x2e' #'124x1e + 124x2e'
 out_type = 'multi_tensor'
 target = 'y'
 dataset_name = 'HOPV'
-x_features = 62 
+x_features =62
 
 
 finetune = False
 finetune_file = '/home/maria/dyn-detanet/code/trained_param/471_vibrant-sweep_polar_Falsenormalize_70epochs_32bs_0.0007335013870127138lr_6blocks_256features_onlyKITqm9.pth' # "/home/maria/detanet_complex/code/trained_param/OPTpolar_70epochs_64batchsize_0.0009lr_6.0cutoff_6numblock_128features_onlyKITqm9_OPTIMIZED.pth"
 
 
-name = f"add-pos-{x_features}features{epochs}epochs_{batch_size}batchsize_{lr}lr_{cutoff}cutoff_{num_block}numblock_{num_features}features_{dataset_name}"
+name = f"OPT_HOPV_Spectra{x_features}spectra{epochs}epochs_{batch_size}batchsize_{lr}lr_{cutoff}cutoff_{num_block}numblock_{num_features}features_{attention_head}att_{dataset_name}"
 
 # -------------------------------
 
@@ -90,7 +90,7 @@ valloader   = DataLoader(val_datasets,   batch_size=batch_size, shuffle=False, d
 
 wandb.init(
     # set the wandb project where this run will be logged
-    project="spectra-input-polar",
+    project="OPT-configs",
     name=name,
     # track hyperparameters and run metadata
     config={

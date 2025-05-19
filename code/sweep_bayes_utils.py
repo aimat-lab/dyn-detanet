@@ -65,7 +65,7 @@ def launch_bayesian_sweep(cfg_file: Path,
     """
     sweep_def: Dict[str, Any] = yaml.safe_load(sweep_yaml or _BAYESIAN_SWEEP)
     sweep_def.setdefault("command",
-                         ["python", "spectra_pol_yaml.py", "--config", str(cfg_file)])
+                         ["python", "spectra_pol_yaml_normalized.py", "--config", str(cfg_file)])
 
     sweep_id = wandb.sweep(sweep_def, project=project)
     print(f"Created Bayesian sweep {sweep_id}")

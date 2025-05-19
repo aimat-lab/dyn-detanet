@@ -27,7 +27,7 @@ def build_dataset(data_file: Path, normalize: bool):
 
     # concatenate real+imag → y and collect stats
     for data in dataset:
-        data.y = torch.cat([data.real_mm, data.imag_mm], dim=0)
+        data.y = torch.cat([data.real_ee, data.imag_ee], dim=0)
         data.x = data.spectra.repeat(len(data.z), 1)
 
     return dataset
@@ -48,7 +48,7 @@ def run_training(base_cfg: Dict[str, Any]):
 
     # --- wandb ----------------------------------------------------------------
     wandb.init(
-        project=base_cfg.get("project", "pol-em-KITQM9"),
+        project=base_cfg.get("project", "HOPV"),
         config=base_cfg,             # ← W&B merges sweep overrides here
     )
 
@@ -75,9 +75,10 @@ def run_training(base_cfg: Dict[str, Any]):
     # val_loader   = DataLoader(val_ds,   batch_size=cfg["batch_size"], shuffle=False, drop_last=True)
 
     name = (
-        f"polar_mm_"   # ← single quotes here
+        f"YESSSSS_SPECTRA_"   # ← single quotes here
         f"{cfg['epochs']}epochs_{cfg['batch_size']}bs_"
-        f"{cfg['lr']}lr_{cfg['num_block']}blocks_{cfg['num_features']}features_dataset_HOPV.pth"
+        f"{cfg['lr']}lr_{cfg['num_block']}blocks_{cfg['num_features']}features_{cfg['num_radial']}radial_"
+        f"{cfg['attention_head']}heads_{cfg['cutoff']}cutoff_KITQM9_"
     )
     print("Training name:", name)
 
@@ -96,8 +97,8 @@ def run_training(base_cfg: Dict[str, Any]):
         maxl               = 3,
         num_block          = cfg["num_block"],
         radial_type        = "trainable_bessel",
-        num_radial         = 32,
-        attention_head     = 8,# cfg["attention_head"],
+        num_radial         = cfg["num_radial"],
+        attention_head     = cfg["attention_head"],
         rc                 = cfg["cutoff"],
         dropout            = 0.0,
         use_cutoff         = False,
@@ -173,8 +174,9 @@ def main():
                              project=cfg.get("project", "deta-bayes"),
                              trials=25)         # <-- change for bigger/smaller budgets       
         #wandb.agent(
-        #    "uorcz-karlsruhe-institute-of-technology/polar-mm-KITQM9/7fao84ng",
-        #    count=25)              # optional: how many runs to schedule
+         #   "uorcz-karlsruhe-institute-of-technology/polar-mm-KITQM9/7fao84ng",
+          #  count=25)       
+          # optional: how many runs to schedule
         
         return
 

@@ -11,18 +11,21 @@ import random
 random.seed(42)
 
 batch_size = 256
-epochs = 10
+epochs = 70
 lr=5e-4 # TRY SMALLER LEARNING RATE
 cutoff=6.0
 num_block=6
-num_features=128
+num_features=256
 scalar_outsize= 4
+
+
 irreps_out= '2x2e'
 out_type = 'cal_multi_tensor'
 finetune = False
 finetune_file = "/home/maria/detanet_complex/code/trained_param/OPTpolar_70epochs_64batchsize_0.0009lr_6.0cutoff_6numblock_128features_onlyKITqm9_OPTIMIZED.pth"
 target = 'y'
-dataset_name = 'KITqm9_dataset'
+x_features = 81
+dataset_name = 'HOPV'
 
 name = f"Per_elem_{epochs}epochs_{batch_size}batchsize_{lr}lr_{cutoff}cutoff_{num_block}numblock_{num_features}features_{dataset_name}"
 
@@ -51,18 +54,18 @@ ref_dataset = []
 
 # No normalization
 for data in dataset:
-    for i in range(data.real.shape[0]):
-        y = torch.cat([data.real[i].unsqueeze(0), data.imag[i].unsqueeze(0)], dim=0)  # -> [2, 3, 3]
+    for i in range(data.real_ee.shape[0]):
+        y = torch.cat([data.real_ee[i].unsqueeze(0), data.imag_ee[i].unsqueeze(0)], dim=0)  # -> [2, 3, 3]
         freq = data.freqs[i].unsqueeze(0)
-        spec_value = data.spectra[i].unsqueeze(0) 
-        x_features = torch.cat([freq, spec_value], dim=0)
+        x = torch.cat([data.osc_pos, data.osc_strength], dim= 0)
+        x = torch.cat([freq, x], dim=0)
 
         # Create the dataset entry
         data_entry = torch_geometric.data.Data(
             idx=data.idx,
             pos=data.pos,
             z=torch.LongTensor(data.z),
-            x=x_features.repeat(len(data.z), 1),
+            x=x.repeat(len(data.z), 1),
             y=y      
         )
         ref_dataset.append(data_entry)
@@ -116,23 +119,23 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 model = DetaNet(num_features=128,
                     act='swish',
                     maxl=3,
-                    num_block=num_block, #3
+                    num_block=num_block,
                     radial_type='trainable_bessel',
                     num_radial=32,
                     attention_head=8,
-                    rc=cutoff, #5.0
+                    rc=cutoff,
                     dropout=0.0,
                     use_cutoff=False,
                     max_atomic_number=34,
                     atom_ref=None,
                     scale=1.0,
-                    scalar_outsize=scalar_outsize, # 2,#4, 
-                    irreps_out= irreps_out, #'2e',# '2e+2e',
+                    scalar_outsize=scalar_outsize,
+                    irreps_out= irreps_out, 
                     summation=True,
                     norm=False,
                     out_type=out_type,
                     grad_type=None,
-                    x_features=2,
+                    x_features=x_features,
                     device=device)
 if finetune:
     state_dict=torch.load(finetune_file)

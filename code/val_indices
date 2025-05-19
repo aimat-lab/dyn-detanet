@@ -1,3 +1,0 @@
-Training set size: 312
-Validation set size: 35
-Validation set indices: ['HOPV_110', 'HOPV_79', 'HOPV_319', 'HOPV_174', 'HOPV_335', 'HOPV_81', 'HOPV_3', 'HOPV_142', 'HOPV_301', 'HOPV_229', 'HOPV_112', 'HOPV_214', 'HOPV_338', 'HOPV_101', 'HOPV_287', 'HOPV_13', 'HOPV_308', 'HOPV_258', 'HOPV_119', 'HOPV_111', 'HOPV_47', 'HOPV_15', 'HOPV_16', 'HOPV_216', 'HOPV_302', 'HOPV_44', 'HOPV_279', 'HOPV_52', 'HOPV_71', 'HOPV_114', 'HOPV_125', 'HOPV_140', 'HOPV_12', 'HOPV_57', 'HOPV_327']
