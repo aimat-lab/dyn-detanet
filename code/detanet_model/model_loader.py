@@ -351,109 +351,57 @@ def uv_model(device,params='trained_param/qm9spectra/borden_os.pth'):
     return model
 
 
-def approach_1_QM9SPol_model(device,params='trained_param/dynamic-polarizability/OPT_QM9SPol_NoSpectra0features70epochs_64batchsize_0.0005lr_6cutoff_6numblock_128features_KITQM9.pth'):
-    state_dict = torch.load(params)
-    model = DetaNet(num_features=128,
-                    act='swish',
-                    maxl=3,
-                    num_block=6,
-                    radial_type='trainable_bessel',
-                    num_radial=32,
-                    attention_head=32,
-                    rc=6.0,
-                    dropout=0.0,
-                    use_cutoff=False,
-                    max_atomic_number=34,
-                    atom_ref=None,
-                    scale=1.0,
-                    scalar_outsize=(4*62),
-                    irreps_out=None,
-                    summation=False,
-                    norm=False,
-                    out_type='124x2e',
-                    grad_type=None,
-                    x_features=0,
-                    device=device)
-    model.load_state_dict(state_dict=state_dict)
-    return model
 
-def approach_2_QM9SPol_model(device,params='trained_param/dynamic-polarizability/OPT_QM9SPol_Spectra62features70epochs_32batchsize_0.0005lr_6cutoff_6numblock_256features_KITQM9.pth'):
+
+def qm9s_dynamic_polarizability_model(device,params='trained_param/dynamic-polarizability/QM9S_dynamic_polarizability.pth'):
     state_dict = torch.load(params)
     model = DetaNet(num_features=256,
-                    act='swish',
-                    maxl=3,
-                    num_block=6,
-                    radial_type='trainable_bessel',
-                    num_radial=32,
-                    attention_head=32,
-                    rc=6.0,
-                    dropout=0.0,
-                    use_cutoff=False,
-                    max_atomic_number=34,
-                    atom_ref=None,
-                    scale=1.0,
-                    scalar_outsize=(4*62),
-                    irreps_out=None,
-                    summation=False,
-                    norm=False,
-                    out_type='124x2e',
-                    grad_type=None,
-                    x_features=62,
-                    device=device)
+                        act='swish',
+                        maxl=3,
+                        num_block=6, #3
+                        radial_type='trainable_bessel',
+                        num_radial=32,
+                        attention_head=32,
+                        rc=6,
+                        dropout=0.0,
+                        use_cutoff=False,
+                        max_atomic_number=34,
+                        atom_ref=None,
+                        scale=1.0,
+                        scalar_outsize=(4*61), # 2,#4, 
+                        irreps_out= '122x2e', #'2e',# '2e+2e',
+                        summation=True,
+                        norm=False,
+                        out_type='multi_tensor',
+                        grad_type=None,
+                        x_features=61,
+                        device=device)
     model.load_state_dict(state_dict=state_dict)
     return model
 
 
-
-def approach_1_HOPV_model(device,params='trained_param/dynamic-polarizability/OPT_HOPV_NoSpectra0spectra80epochs_32batchsize_0.0005lr_4cutoff_4numblock_64features_8att_HOPV.pth'):
+def hopv241_dynamic_polarizability_model(device,params='trained_param/dynamic-polarizability/HOPV241_dynamic_polarizability.pth'):
     state_dict = torch.load(params)
-    model = DetaNet(num_features=64,
-                    act='swish',
-                    maxl=3,
-                    num_block=4,
-                    radial_type='trainable_bessel',
-                    num_radial=128,
-                    attention_head=8,
-                    rc=4.0,
-                    dropout=0.0,
-                    use_cutoff=False,
-                    max_atomic_number=34,
-                    atom_ref=None,
-                    scale=1.0,
-                    scalar_outsize=(4*62),
-                    irreps_out='124x2e',
-                    summation=True,
-                    norm=False,
-                    out_type='multi_tensor',
-                    grad_type=None,
-                    x_features=0,
-                    device=device)
-    model.load_state_dict(state_dict=state_dict)
-    return model
-
-
-def approach_2_HOPV_model(device,params='trained_param/dynamic-polarizability/OPT_HOPV_Spectra62spectra80epochs_8batchsize_0.001lr_4cutoff_4numblock_256features_64att_HOPV.pth'):
-    state_dict = torch.load(params)
-    model = DetaNet(num_features=256,
-                    act='swish',
-                    maxl=3,
-                    num_block=4,
-                    radial_type='trainable_bessel',
-                    num_radial=32,
-                    attention_head=64,
-                    rc=4.0,
-                    dropout=0.0,
-                    use_cutoff=False,
-                    max_atomic_number=34,
-                    atom_ref=None,
-                    scale=1.0,
-                    scalar_outsize=(4*62),
-                    irreps_out=None,
-                    summation=False,
-                    norm=False,
-                    out_type='124x2e',
-                    grad_type=None,
-                    x_features=62,
-                    device=device)
+    model = DetaNet(num_features=512,
+                        act='swish',
+                        maxl=3,
+                        num_block=4, #3
+                        radial_type='trainable_bessel',
+                        num_radial=32,
+                        attention_head=64,
+                        rc=4,
+                        dropout=0.0,
+                        use_cutoff=False,
+                        max_atomic_number=34,
+                        atom_ref=None,
+                        scale=1.0,
+                        scalar_outsize=(4*241), # 2,#4, 
+                        irreps_out= '482x2e', #'2e',# '2e+2e',
+                        summation=True,
+                        norm=False,
+                        out_type='multi_tensor',
+                        grad_type=None,
+                        x_features=241,
+                        device=device)
     model.load_state_dict(state_dict=state_dict)
     return model

@@ -251,35 +251,35 @@ class DetaNet(nn.Module):
 
 
     def cal_multi_tensor(self, z, pos, batch, outs, outt):
+        """Calculate the multi-tensor with a scalar_outsize of 2 times N and irreps_out of '2e' times N."""
         B = outs.size(0)
         scales = outs.view(B, self.num_pol_spectra, 2)  # shape [B, self.num_pol_spectra, 2]
         ra = self.centroid_coordinate(z=z, pos=pos, batch=batch)
         sh = o3.spherical_harmonics(l="2e", x=ra, normalize=False)
         # Expand across frequencies => shape [B, 1, 5] => [B, self.num_pol_spectra, 5]
         sh = sh.unsqueeze(1).expand(-1, self.num_pol_spectra, -1)
-        sa = scales[..., 0]
-        sb = scales[..., 1]
+        sa = scales[..., 0] # scale
+        sb = scales[..., 1] # trace component
         ta = sh * sa.unsqueeze(-1)
         C = outt.size(0)
         outt = outt.view(C, self.num_pol_spectra, 5)
         out = self.ct.to_cartesian(
-            torch.cat([sb.unsqueeze(-1), outt + ta], dim=-1)
+            torch.cat([sb.unsqueeze(-1), outt + ta], dim=-1) # input to ct in shape [ trace | 2e ]
         )  
         return out
     
     def cal_multi_assymetric_tensor(self, z, pos, batch, outs, outt):
+        """Calculate the multi-assymetric tensor with a scalar_outsize of 2 and irreps_out of '1e+2e'."""
         B = outs.size(0)
         scales = outs.view(B, self.num_pol_spectra, 2)  # shape [B, self.num_pol_spectra, 2]
-        # Extract real & imag scale factors => shape [B, self.num_pol_spectra]
-        sa = scales[..., 0]
-        sb = scales[..., 1]
+        sa = scales[..., 0] # scale
+        sb = scales[..., 1] # trace component
         ra = self.centroid_coordinate(z=z, pos=pos, batch=batch)
         sh = o3.spherical_harmonics(l="1e + 2e", x=ra, normalize=False)
         # Expand across frequencies => shape [B, 1, 8] => [B, self.num_pol_spectra, 8]
         sh = sh.unsqueeze(1).expand(-1, self.num_pol_spectra, -1)
         print("sh.shape :", sh.shape)
-
-        # Multiply to get ta_re & ta_im => each shape [B, self.num_pol_spectra, 8]
+        # Each shape [B, self.num_pol_spectra, 8]
         ta = sh * sa.unsqueeze(-1)
 
         C = outt.size(0)
