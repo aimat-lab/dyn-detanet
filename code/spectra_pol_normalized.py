@@ -6,6 +6,7 @@ from torch_geometric.loader import DataLoader
 import trainer_normalized
 from detanet_model import *
 
+from sklearn.preprocessing import RobustScaler
 from sklearn.preprocessing import StandardScaler
 import numpy as np
 import torch
@@ -15,7 +16,7 @@ import wandb
 import random
 random.seed(42)
 
-batch_size = 32
+batch_size = 8
 epochs = 70
 lr=0.0006
 cutoff=6
@@ -24,12 +25,12 @@ num_features=256
 attention_head=64
 num_radial=64
 
-scalar_outsize= (4* 62)#(4*62)
-irreps_out= '124x2e' #'124x1e + 124x2e'
+scalar_outsize= (4* 61)#(4*62)
+irreps_out= '122x2e' #'124x1e + 124x2e'
 out_type = 'multi_tensor'
 target = 'y'
-dataset_name = 'KITQM9'
-x_features = 62 
+dataset_name = 'HOPV'
+x_features = 61
 
 name = f"normalized_{x_features}xfeatures{epochs}epochs_{batch_size}batchsize_{lr}lr_{cutoff}cutoff_{num_block}numblock_{num_features}features_{dataset_name}"
 
@@ -52,14 +53,15 @@ print("dataset[0] :", ex1, )
 print("dataset[5] :", ex2,)
 
 for data in dataset:
-    data.y = torch.cat([data.real_ee, data.imag_ee], dim=0)
+    data.real_ee = data.real_ee[1:]-data.real_ee[0]
+    data.imag_ee = data.imag_ee[1:]
+    data.y = torch.cat([data.real_ee, data.imag_ee], dim=0)  # shape: [124, 3, 3]
 
-    if x_features == 62:
-        data.x = data.spectra.repeat(len(data.z), 1)
+    if x_features == 61:
+        data.x = data.spectra[1:].repeat(len(data.z), 1)
     elif x_features == 80:
         x = torch.cat([data.osc_pos, data.osc_strength], dim= 0)
         data.x = x.repeat(len(data.z), 1)
-print("data.y.shape :", data.y.shape)
 
 
 # -------------------------------
@@ -79,7 +81,7 @@ for mol in val_datasets:
 print(f"Training set size: {len(train_datasets)}")
 print(f"Validation set size: {len(val_datasets)}")
 
-
+""""
 import torch
 import numpy as np
 
@@ -99,7 +101,64 @@ for data in train_datasets:
     flat = data.y.flatten()
     norm_flat = (flat - global_mean) / global_std
     data.y = norm_flat.view(124, 3, 3).to(torch.float32)
- 
+"""
+
+
+
+# 1) gather every raw value  →  shape [N_total_values, 1]
+real_vals = torch.cat([g.real_ee.flatten() for g in train_datasets]).view(-1, 1)
+imag_vals = torch.cat([g.imag_ee.flatten() for g in train_datasets]).view(-1, 1)
+
+print("real_vals.shape :", real_vals.shape)  # shape: [N_total_values, 1]
+print("imag_vals.shape :", imag_vals.shape)  # shape: [N_total_values, 1]
+
+# 2) fit robust scalers  (e.g. keep central 96 % → (2,98) quantile range)
+real_scaler = RobustScaler(quantile_range=(2.0, 98.0)).fit(real_vals.numpy())
+imag_scaler = RobustScaler(quantile_range=(2.0, 98.0)).fit(imag_vals.numpy())
+
+# 3) transform and write back ------------------------------------------------
+idx = 0
+for g in train_datasets:
+    shape = g.real_ee.shape
+    print("shape", shape)  # shape: [124, 3, 3]
+
+    print(g.real_ee.flatten().unsqueeze(1).shape) 
+    # slice this molecule’s block, reshape back to [124,3,3]
+    g.real_ee = torch.from_numpy(
+                   real_scaler.transform(g.real_ee.flatten().unsqueeze(1).numpy())
+                 ).view_as(g.real_ee).to(torch.float32)
+    g.imag_ee = torch.from_numpy(
+                   imag_scaler.transform(g.imag_ee.flatten().unsqueeze(1).numpy())
+                 ).view_as(g.imag_ee).to(torch.float32)
+
+    # target tensor = real ⊕ imag  (still shape [124,3,3])
+    g.y = torch.cat([g.real_ee, g.imag_ee], dim=0)
+
+
+print("→ robust scaling applied: real & imag handled separately")
+
+# 4) save the scalers for inverse transform later
+torch.save({"real_scaler": real_scaler,
+            "imag_scaler": imag_scaler},
+           "Normalize_per_value_robust.pth")
+
+
+print("2 %, 98 %⟩ quantile range used:",
+      real_scaler.quantile_range)        # default (25.0, 75.0)
+
+# Per-feature IQR (or MAD if unit_variance=True) ───────────────
+print("real scale_ \n",
+      real_scaler.scale_)                # shape = (9,)
+
+print("real centre_ \n",
+      real_scaler.center_)               # shape = (9,)
+
+print("imag scale_ \n",
+        imag_scaler.scale_)                # shape = (9,)
+print("imag centre_ \n",
+        imag_scaler.center_)               # shape = (9,)
+
+
 
 # Dataloaders
 trainloader = DataLoader(train_datasets, batch_size=batch_size, shuffle=True,  drop_last=True)
@@ -157,6 +216,6 @@ trainer_ = trainer_normalized.Trainer(
     optimizer='AdamW'
 )
 
-trainer_.train(num_train=epochs, targ=target, mean=global_mean, std=global_std)
+trainer_.train(num_train=epochs, targ=target,  real_scaler=real_scaler, imag_scaler=imag_scaler )
 
 torch.save(model.state_dict(), os.path.join(current_dir, 'trained_param', name + '.pth'))

@@ -1,7 +1,7 @@
 import torch
 import wandb
 from detanet_model import *
-
+import utils as ut
 
 # Import the scheduler
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -70,6 +70,8 @@ class Trainer:
         self,
         num_train,
         targ,
+        real_scaler = None,
+        imag_scaler = None,
         stop_loss=1e-8,
         val_per_train=50,
         print_per_epoch=10
@@ -110,9 +112,9 @@ class Trainer:
                         z=batch.z.to(self.device),
                         batch=batch.batch.to(self.device)
                     )
-            
 
                 target = batch[targ].to(self.device)
+
                 loss = self.loss_function(out.reshape(target.shape), target)
                 wandb.log({"train_loss": loss.item(), 
                             "step": self.step})
@@ -122,20 +124,22 @@ class Trainer:
                 num_batches += 1
 
                 if epoch % 10 == 0:
-                    running_emd_loss += loss_emd_per_spectrum(out, target.reshape(out.shape), S=62) 
-
+                    pass
+                    #print(f"Batch {j+1}/{len_train}: ")
+                    #running_emd_loss += loss_emd(out.reshape(target.shape), target)
 
             # Compute average training loss for epoch
             avg_train_loss = running_train_loss / num_batches
             self.train_losses.append(avg_train_loss)
             wandb.log({"epoch": epoch, "loss_per_epoch": avg_train_loss})
 
+
             if epoch % 10 == 0:
                 self.emd_loss = running_emd_loss / num_batches
-                wandb.log({
-                    "emd_loss": self.emd_loss,
-                    "epoch": epoch,
-                })
+                #wandb.log({
+                #    "emd_loss": self.emd_loss,
+                #    "epoch": epoch,
+                #})
 
 
             # Validation pass each epoch
@@ -159,47 +163,76 @@ class Trainer:
                                 batch=val_batch.batch.to(self.device)
                             )
                         else:
-                            
                             val_out = self.model(
                                 pos=val_batch.pos.to(self.device),
                                 z=val_batch.z.to(self.device),
                                 batch=val_batch.batch.to(self.device)
                             )
-                            
-                        full_val_loss = self.loss_function(val_out.reshape(val_target.shape), val_target).item()
+                        # ------------------------------------------------------------
+                        # 1) split the prediction into     Re[ε₀₀(ω)]  &  Im[ε₀₀(ω)]
+                        #    val_out shape: [B, 122]
+                        # ------------------------------------------------------------
+                        B = val_out.size(0)                     # batch size
+                        real_pred_scaled = val_out[:, :61]      # [B, 61] – Re part   (scaled)
+                        imag_pred_scaled = val_out[:, 61:]      # [B, 61] – Im part   (scaled)
+
+                        # ------------------------------------------------------------
+                        # 2) inverse-transform ONLY the (0,0) component
+                        #    scalers were passed in as   real_scaler , imag_scaler
+                        # ------------------------------------------------------------
+                        real_phys = torch.from_numpy(
+                            real_scaler.inverse_transform(
+                                real_pred_scaled.cpu().reshape(-1, 1).numpy()   # [B·61, 1]
+                            )
+                        ).to(self.device).view(B, 61)                           # back to [B, 61]
+
+                        imag_phys = torch.from_numpy(
+                            imag_scaler.inverse_transform(
+                                imag_pred_scaled.cpu().reshape(-1, 1).numpy()
+                            )
+                        ).to(self.device).view(B, 61)
+
+                        # ------------------------------------------------------------
+                        # 3) put Re and Im back together  →  [B, 122]
+                        # ------------------------------------------------------------
+                        val_phys = torch.cat([real_phys, imag_phys], dim=1)
+                        print(f"val_phys.shape: {val_phys.shape}")
+                        
+
+                        # ------------------------------------------------------------
+                        # 4) compute validation loss / metrics with *physical* numbers
+                        # ------------------------------------------------------------
+                        full_val_loss = self.loss_function(val_phys.reshape(val_target.shape), val_target).item()
                         running_val_loss_full += full_val_loss
                         val_count += 1
 
-                        if epoch%10== 0:
-                            val_emd_loss +=  loss_emd_per_spectrum(val_out, val_target.reshape(val_out.shape), S=62)
-                            val_R2_v += R2(val_out.reshape(val_target.shape), val_target).item()
-
+                        if epoch % 10 == 0:                          # optional extra metrics
+                            val_R2_v     += R2(val_phys.reshape(val_target.shape),  val_target).item()
+                            val_emd_loss += loss_emd(val_phys.reshape(val_target.shape), val_target)
 
 
                 self.model.train()
-                print("val_count", val_count)
 
                 # Average val metrics
                 avg_val_loss = running_val_loss_full / val_count
 
+                # Log
+                wandb.log({
+                    "epoch": epoch,
+                    "epoch_val_loss": avg_val_loss})
+
+
                 if epoch%10== 0:
-                    avg_val_R = val_R2_v / val_count
-                    avg_loss_emd = val_emd_loss / val_count
                     wandb.log({
-                    "val_R2": avg_val_R,
-                    "val_emd_loss": avg_loss_emd,
+                    "val_R2": val_R2_v / val_count,
                     "lr": self.optimizer.param_groups[0]['lr'],  # handy to see the LR
+                    "val_emd_loss": val_emd_loss / val_count,
                     "epoch": epoch,
                     })
 
                 self.val_losses.append(avg_val_loss)
                 # Step the scheduler on the validation loss
                 self.scheduler.step(avg_val_loss)
-
-                # Log
-                wandb.log({
-                    "epoch": epoch,
-                    "epoch_val_loss": avg_val_loss})
 
 
                 print(f"Epoch {epoch+1}/{num_train}: "

@@ -85,7 +85,7 @@ def cosine_similarity(pred: torch.Tensor,
 
 
 import ot
-def loss_emd(pred, target):
+def loss_emd_ori(pred, target):
 
     if pred.shape != target.shape:
         raise ValueError(f"Shape mismatch: pred {pred.shape}, target {target.shape}")
@@ -113,3 +113,115 @@ def loss_emd(pred, target):
 
         losses += Wd            
     return losses / (R * C)  
+
+import torch
+import ot
+import numpy as np
+
+def loss_emd(pred: torch.Tensor, target: torch.Tensor, *, num_iter=2_000_000):
+    """
+    Earth-Mover / Wasserstein-1 loss used in your polarizability experiment.
+    Handles scalars, vectors or matrices – anything whose first dimension is
+    the batch size.
+
+    Args
+    ----
+    pred, target :  torch.Tensor     – identical shape, first dim = B
+    num_iter      :  int             – max iterations for OT solver
+
+    Returns
+    -------
+    torch.Tensor  (scalar, on same device & dtype as `pred`)
+    """
+    if pred.shape != target.shape:
+        raise ValueError(f"shape mismatch: pred {pred.shape}, target {target.shape}")
+
+    # ---------- reshape to [B, F] where F = ∏_{d>0} size_d ----------
+    B = pred.shape[0]
+    F = int(pred.numel() // B)              # number of per-feature “histograms”
+    pred_flat   = pred.reshape(B, F)
+    target_flat = target.reshape(B, F)
+
+    # ---------- uniform weights over each batch element ----------
+    # (same for every feature, so we build them once)
+    a_np = np.full(B, 1.0 / B, dtype=np.float64)
+    b_np = a_np                                # identical because shapes match
+
+    loss_sum = 0.0
+    for f in range(F):
+        # detach → cpu → numpy   (emd2 lives in numpy land)
+        x_np = pred_flat[:, f].detach().cpu().numpy().reshape(-1, 1)
+        y_np = target_flat[:, f].detach().cpu().numpy().reshape(-1, 1)
+
+        # pair-wise ℓ₂ ground distance  [B, B]
+        M_np = ot.dist(x_np, y_np, metric='euclidean')
+
+        # exact Wasserstein-1 (a == b == uniform)
+        loss_sum += ot.emd2(a_np, b_np, M_np, numItermax=num_iter)
+
+    # mean over the F “features”  →  scalar tensor on original device/dtype
+    return pred.new_tensor(loss_sum / F)
+
+
+
+import numpy as np
+import torch
+import ot                                # POT library
+
+def loss_emd_per_spectrum(pred: torch.Tensor,
+                          target: torch.Tensor,
+                          *,
+                          S = 61,
+                          num_iter: int = 2_000_000) -> torch.Tensor:
+    """
+    Exact 1-D Wasserstein-1 (Earth-Mover) loss, computed
+    • independently for every sample in the batch,
+    • independently for Re and Im spectra,
+    • independently for every tensor component.
+
+    pred, target :  [B, 122, 3, 3]   – must have identical shape
+    returns       :  scalar tensor on pred.device / pred.dtype
+    """
+
+    if pred.shape != target.shape:
+        raise ValueError(f"shape mismatch: pred {pred.shape}, target {target.shape}")
+    
+    #print("pred", pred.shape)
+    #print("target", target.shape)
+
+    B, S2, H, W = pred.shape           # S2 = 122 = 2 × 61
+    S = S                             # one spectrum length
+    C = H * W                           # 9 tensor components
+    parts = 2                           # Re / Im
+
+    # reshape → [B, parts, S, C]  where C = 9
+    pred_r = pred.reshape(B, parts, S, C)
+    targ_r = target.reshape(B, parts, S, C)
+
+    #print("pred_r", pred_r.shape)
+    #print("targ_r", targ_r.shape)
+
+    # uniform weights for a single spectrum (61 bins)
+    a_np = np.full(S, 1.0 / S, dtype=np.float64)
+
+    loss_sum = 0.0
+
+    for b in range(B):
+        for p in range(parts):          # 0 = Real, 1 = Imag
+            # pull once to CPU / numpy for the whole spectrum to save transfers
+            x_np = pred_r[b, p].detach().cpu().numpy()   # shape [61, 9]
+            y_np = targ_r[b, p].detach().cpu().numpy()
+
+            for c in range(C):          # loop over the 9 tensor entries
+                # build 61×61 ground distance on *values*
+                M_np = ot.dist(
+                    x_np[:, c].reshape(-1, 1),
+                    y_np[:, c].reshape(-1, 1),
+                    metric="euclidean",
+                )
+
+                loss_sum += ot.emd2(a_np, a_np, M_np, numItermax=num_iter)
+
+    # normalise: mean over (B × parts × C)
+    normaliser = B * parts * C
+    return pred.new_tensor(loss_sum / normaliser)

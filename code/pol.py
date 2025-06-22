@@ -10,22 +10,24 @@ import wandb
 import random
 random.seed(42)
 
-batch_size = 256
-epochs = 70
-lr=5e-4 # TRY SMALLER LEARNING RATE
+batch_size = 32
+epochs = 50
+lr=0.0005 
 cutoff=6.0
 num_block=6
 num_features=256
+
+
 scalar_outsize= 4
-
-
 irreps_out= '2x2e'
-out_type = 'cal_multi_tensor'
+out_type = 'multi_tensor'
+
 finetune = False
 finetune_file = "/home/maria/detanet_complex/code/trained_param/OPTpolar_70epochs_64batchsize_0.0009lr_6.0cutoff_6numblock_128features_onlyKITqm9_OPTIMIZED.pth"
+
 target = 'y'
-x_features = 81
-dataset_name = 'HOPV'
+x_features = 64
+dataset_name = 'KITQM9'
 
 name = f"Per_elem_{epochs}epochs_{batch_size}batchsize_{lr}lr_{cutoff}cutoff_{num_block}numblock_{num_features}features_{dataset_name}"
 
@@ -57,8 +59,10 @@ for data in dataset:
     for i in range(data.real_ee.shape[0]):
         y = torch.cat([data.real_ee[i].unsqueeze(0), data.imag_ee[i].unsqueeze(0)], dim=0)  # -> [2, 3, 3]
         freq = data.freqs[i].unsqueeze(0)
-        x = torch.cat([data.osc_pos, data.osc_strength], dim= 0)
-        x = torch.cat([freq, x], dim=0)
+        spec_freq = data.spectra[i].unsqueeze(0)
+        #x = torch.cat([data.osc_pos, data.osc_strength], dim= 0)
+        #x = torch.cat([freq, x], dim=0)
+        x = torch.cat([freq, spec_freq, data.spectra], dim=0)
 
         # Create the dataset entry
         data_entry = torch_geometric.data.Data(
@@ -103,7 +107,7 @@ valloader=DataLoader(val_datasets,batch_size=batch_size,shuffle=True, drop_last=
 
 wandb.init(
     # set the wandb project where this run will be logged
-    project="spectra-input",
+    project="OPT-configs",
     name=name,
     # track hyperparameters and run metadata
     config={

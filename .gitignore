@@ -12,7 +12,7 @@ wandb
 /wandb/*
 *__pycache__*
 pycache/*
-# *.pth
+*.pth
 *.png
 
 # Byte-compiled / optimized / DLL files

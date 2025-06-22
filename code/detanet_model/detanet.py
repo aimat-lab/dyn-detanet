@@ -257,10 +257,8 @@ class DetaNet(nn.Module):
         sh = o3.spherical_harmonics(l="2e", x=ra, normalize=False)
         # Expand across frequencies => shape [B, 1, 5] => [B, self.num_pol_spectra, 5]
         sh = sh.unsqueeze(1).expand(-1, self.num_pol_spectra, -1)
-        # Extract real & imag scale factors => shape [B, self.num_pol_spectra]
         sa = scales[..., 0]
         sb = scales[..., 1]
-        # Multiply to get ta_re & ta_im => each shape [B, self.num_pol_spectra, 5]
         ta = sh * sa.unsqueeze(-1)
         C = outt.size(0)
         outt = outt.view(C, self.num_pol_spectra, 5)

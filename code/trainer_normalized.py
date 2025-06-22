@@ -68,8 +68,8 @@ class Trainer:
         self,
         num_train,
         targ,
-        mean,
-        std,
+        real_scaler,
+        imag_scaler,
         stop_loss=1e-8,
         val_per_train=50,
         print_per_epoch=10
@@ -154,9 +154,35 @@ class Trainer:
                         
                         B = val_out.shape[0]
 
-                        val_out = val_out.reshape(val_target.shape).flatten()
-                        val_out_phys  = val_out * std + mean
-                        val_out_phys = val_out_phys.view(B * 124, 3, 3).to(torch.float32)
+                        real_out = val_out[:, 61:, :, :] # [B, 61, 3, 3]
+                        imag_out = val_out[:, :61, :, :] # [B, 61, 3, 3]
+                        #print("real_out.shape", real_out.shape)
+                        #print("imag_out.shape", imag_out.shape)
+                        real_out_flatten = real_out.flatten().unsqueeze(1)
+                        imag_out_flatten = imag_out.flatten().unsqueeze(1)
+                        print("real_out_flatten.shape", real_out_flatten.shape)
+                        print("imag_out_flatten.shape", imag_out_flatten.shape)
+
+                        #print("real_out.shape", real_out.shape)
+                        #print("imag_out.shape", imag_out.shape)
+
+                        # Scale the output
+                        if real_scaler is not None:
+                            real_out = real_scaler.inverse_transform(real_out_flatten.cpu().numpy())
+                            real_out = torch.tensor(real_out).to(self.device)
+                        if imag_scaler is not None:
+                            imag_out = imag_scaler.inverse_transform(imag_out_flatten.cpu().numpy())
+                            imag_out = torch.tensor(imag_out).to(self.device)
+                            print("real_out.shape", real_out.shape)
+                            print("imag_out.shape", imag_out.shape)
+
+
+                        # Concatenate real and imaginary parts
+                        val_out = torch.cat((real_out, imag_out), dim=0) # [B, 124, 3, 3]
+                        print("val_out after normalization", val_out.shape)
+                        # Reshape to [B*124, 3, 3]
+                        val_out_phys = val_out.view(B * 122, 3, 3).to(torch.float32)
+                        #print("val_out_phys.shape", val_out_phys.shape)
 
                         full_val_loss = self.loss_function(val_out_phys, val_target).item()
                         running_val_loss_full += full_val_loss
@@ -194,7 +220,7 @@ class Trainer:
                     avg_loss_emd = val_emd_loss / val_count
                     wandb.log({
                     "val_R2": avg_val_R,
-                    "emd_loss": avg_loss_emd,
+                    "val_emd_loss": avg_loss_emd,
                     "lr": self.optimizer.param_groups[0]['lr'],  # handy to see the LR
                     "epoch": epoch,
                     })

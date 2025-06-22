@@ -15,8 +15,10 @@ import numpy as np
 from torch_geometric.loader import DataLoader
 
 # local imports
-import trainer_normalized
+import trainer_per_elem_normalized
 from detanet_model import DetaNet, l2loss  
+from sklearn.preprocessing import StandardScaler
+
 
 def build_dataset(data_file: Path, normalize: bool):
     dataset_file = Path(data_file)
@@ -25,11 +27,13 @@ def build_dataset(data_file: Path, normalize: bool):
     dataset = torch.load(dataset_file)
     print(f"Number of graphs in the dataset: {len(dataset)}")
 
-    # concatenate real+imag → y and collect stats
+    # Subtract static polarizability
     for data in dataset:
-        data.y = torch.cat([data.real_ee, data.imag_ee], dim=0)
-        data.x = data.spectra.repeat(len(data.z), 1)
+        data.real_ee = data.real_ee[1:]-data.real_ee[0]
+        data.imag_ee = data.imag_ee[1:]
 
+        data.y = torch.cat([data.real_ee, data.imag_ee], dim=0)
+        data.x = data.spectra[1:].repeat(len(data.z), 1)
     return dataset
 
 
@@ -39,25 +43,54 @@ def split_dataset(dataset, train_fraction: float, seed: int):
     return dataset[:idx], dataset[idx:]
 
 
+def clip_by_value(matrix_2d: torch.Tensor,
+                  low:  float = -2_500.0,
+                  high: float =  2_500.0) -> torch.Tensor:
+    """
+    Return a copy of `matrix_2d` (shape [N, 9]) where every entry
+    outside the interval [low, high] is set to the nearest bound.
+    """
+    return torch.clamp(matrix_2d, min=low, max=high)
+
+
 def normalize_dataset(train_dataset):
-    all_values = []
-    for data_entry in train_dataset:
-        data_entry.y = torch.cat([data_entry.real_ee, data_entry.imag_ee], dim=0)  # shape: [124, 3, 3]
-        all_values.append(data_entry.y.flatten().numpy())              # shape: [124*3*3] = [1116]
 
-    all_values = np.concatenate(all_values, axis=0)              # shape: [N_total_values]
+    # Normalize the data (standard z-score)
+    real_rows = torch.cat([d.real_ee.reshape(-1, 9) for d in train_dataset])  # [N·61, 9]
+    imag_rows = torch.cat([d.imag_ee.reshape(-1, 9) for d in train_dataset])  # [N·61, 9]
 
-    global_mean = np.mean(all_values)
-    global_std = np.std(all_values)
-    print(f"Global mean: {global_mean}")
-    print(f"Global std: {global_std}")
+    print("real_rows shape:", real_rows.shape)  # [N·61, 9]
+    print("imag_rows shape:", imag_rows.shape)  # [N·61, 9]
 
-    for data_entry in train_dataset:
-        flat = data_entry.y.flatten()
-        norm_flat = (flat - global_mean) / global_std
-        data_entry.y = norm_flat.view(124, 3, 3).to(torch.float32)
-    
-    return train_dataset, global_mean, global_std
+
+    #robust_real = StandardScaler()     
+    #R_scaled = robust_real.fit_transform(real_rows.numpy()).astype("float32")
+    #robust_imag = StandardScaler()
+    #I_scaled = robust_imag.fit_transform(imag_rows.numpy()).astype("float32")
+
+
+    real_rows_clipped = clip_by_value(real_rows, -2_500, 2_500)
+    imag_rows_clipped = clip_by_value(imag_rows, -2_500, 2_500)
+
+    print("real_rows_clipped shape:", real_rows_clipped.shape)  # [N·61, 9]
+    print("imag_rows_clipped shape:", imag_rows_clipped.shape)  # [N·61, 9]
+
+    # 2) standard-scale the clipped data
+    std_real = StandardScaler()
+    std_imag = StandardScaler()
+
+    R_clip = std_real.fit_transform(real_rows_clipped.numpy()).astype("float32")
+    I_clip = std_imag.fit_transform(imag_rows_clipped.numpy()).astype("float32")
+
+
+    offset = 0
+    for d in train_dataset:
+        n = d.real_ee.shape[0]                                # 61 frequency slices
+        d.real_ee = torch.tensor(R_clip[offset:offset+n]).view(n, 3, 3)
+        d.imag_ee = torch.tensor(I_clip[offset:offset+n]).view(n, 3, 3)
+        offset += n
+        d.y = torch.cat([d.real_ee, d.imag_ee], dim=0)  # [122, 3, 3]
+        return train_dataset, std_real, std_imag
 
 
 # -----------------------------------------------------------------------------
@@ -90,16 +123,16 @@ def run_training(base_cfg: Dict[str, Any]):
     print("Validation set indices:", val_dataset_to_print)
     
     # --- normalize ------------------------------------------------------------
-    train_ds, global_mean, global_std = normalize_dataset(train_ds)
+    train_ds, real_scaler, imag_scaler = normalize_dataset(train_ds)
     train_loader = DataLoader(train_ds, batch_size=cfg["batch_size"], shuffle=True )
     val_loader   = DataLoader(val_ds,   batch_size=cfg["batch_size"], shuffle=False)
 
 
     name = (
-        f"NORM_YES_SPECTRA_"   # ← single quotes here
+        f"Clipped_norm_"   # ← single quotes here
         f"{cfg['epochs']}epochs_{cfg['batch_size']}bs_"
         f"{cfg['lr']}lr_{cfg['num_block']}blocks_{cfg['num_features']}features_{cfg['num_radial']}radial_"
-        f"{cfg['attention_head']}heads_{cfg['cutoff']}cutoff_HOPV"
+        f"{cfg['attention_head']}heads_{cfg['cutoff']}cutoff_KITQM9"
     )
     print("Training name:", name)
 
@@ -144,7 +177,7 @@ def run_training(base_cfg: Dict[str, Any]):
     wandb.watch(model, log="all")
 
     # --- trainer --------------------------------------------------------------
-    trainer_ = trainer_normalized.Trainer(
+    trainer_ = trainer_per_elem_normalized.Trainer(
         model,
         train_loader=train_loader,
         val_loader=val_loader,
@@ -154,7 +187,7 @@ def run_training(base_cfg: Dict[str, Any]):
         optimizer='AdamW'
     )
 
-    trainer_.train(num_train=cfg["epochs"], targ=cfg["target"], mean=global_mean, std=global_std)
+    trainer_.train(num_train=cfg["epochs"], targ=cfg["target"], real_scaler=real_scaler, imag_scaler=imag_scaler)
 
     # --- save -----------------------------------------------------------------
 

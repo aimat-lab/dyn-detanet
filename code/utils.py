@@ -77,45 +77,11 @@ def load_spectra(positions, osc_strength, fun_type="l", width_param=0.05):
 
     return line_shapes
 
+def inverse_std(x_std, scaler, device=None, dtype=None):
+    μ = torch.tensor(scaler.mean_,  device=device, dtype=dtype or x_std.dtype)
+    σ = torch.tensor(scaler.scale_, device=device, dtype=dtype or x_std.dtype)
+    return x_std * σ + μ
 
-import torch
-
-def inverse_standardise(t: torch.Tensor, scaler) -> torch.Tensor:
-    """
-    z : (..., 9) tensor in standardised space
-    scaler : fitted sklearn StandardScaler
-    returns tensor in physical units
-    """
-    mu    = torch.as_tensor(scaler.mean_,  device=t.device, dtype=t.dtype)
-    sigma = torch.as_tensor(scaler.scale_, device=t.device, dtype=t.dtype)
-    return t * sigma + mu
-
-def undo_spectrum_scaling(flat: torch.Tensor,
-                          real_scaler,
-                          imag_scaler) -> torch.Tensor:
-    
-    #print("flat.shape", flat.shape)
-
-    N = flat.shape[0]
-    if N % 124 != 0:
-        raise ValueError(f"First dim must be multiple of 124, got {N}")
-    B = N // 124
-
-    ts = flat.view(B, 124, 3, 3)
-    ts9 = ts.view(B, 124, 9)
-
-    real_s, imag_s = ts9.split(62, dim=1)
-
-    # 4) Inverse‐scale each block
-    real_phys = inverse_standardise(real_s, real_scaler)   # [B,62,9]
-    imag_phys = inverse_standardise(imag_s, imag_scaler)
-
-    ts_phys9 = torch.cat([real_phys, imag_phys], dim=1)    # [B,124,9]
-    ts_phys  = ts_phys9.view(B, 124, 3, 3)
-
-    out = ts_phys.view(N, 3, 3)
-    # print("out.shape", out.shape)
-    return out
 
 
 def undo_spectrum_scaling_full(flat: torch.Tensor,

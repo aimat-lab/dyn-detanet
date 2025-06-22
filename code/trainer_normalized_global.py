@@ -1,7 +1,7 @@
 import torch
 import wandb
 from detanet_model import *
-
+import utils as ut
 
 # Import the scheduler
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -34,8 +34,6 @@ class Trainer:
         self.train_data = train_loader
         self.val_data = val_loader
         self.loss_function = loss_function
-        # Initialize Sinkhorn divergence (Earth Mover's Distance approximation)
-        #self.sinkhorn_loss = SamplesLoss(loss="sinkhorn", backend="online")
         self.device = device
 
         self.opt_type = optimizer
@@ -70,6 +68,7 @@ class Trainer:
         self,
         num_train,
         targ,
+        std,
         stop_loss=1e-8,
         val_per_train=50,
         print_per_epoch=10
@@ -87,7 +86,6 @@ class Trainer:
 
         for epoch in range(num_train):
             running_train_loss = 0.0
-            running_emd_loss = 0.0
             num_batches = 0
 
             # We'll do a single "full" validation pass each epoch
@@ -110,9 +108,9 @@ class Trainer:
                         z=batch.z.to(self.device),
                         batch=batch.batch.to(self.device)
                     )
-            
 
                 target = batch[targ].to(self.device)
+
                 loss = self.loss_function(out.reshape(target.shape), target)
                 wandb.log({"train_loss": loss.item(), 
                             "step": self.step})
@@ -121,22 +119,10 @@ class Trainer:
                 running_train_loss += loss.item()
                 num_batches += 1
 
-                if epoch % 10 == 0:
-                    running_emd_loss += loss_emd_per_spectrum(out, target.reshape(out.shape), S=62) 
-
-
             # Compute average training loss for epoch
             avg_train_loss = running_train_loss / num_batches
             self.train_losses.append(avg_train_loss)
             wandb.log({"epoch": epoch, "loss_per_epoch": avg_train_loss})
-
-            if epoch % 10 == 0:
-                self.emd_loss = running_emd_loss / num_batches
-                wandb.log({
-                    "emd_loss": self.emd_loss,
-                    "epoch": epoch,
-                })
-
 
             # Validation pass each epoch
             if self.val_data is not None:
@@ -159,28 +145,50 @@ class Trainer:
                                 batch=val_batch.batch.to(self.device)
                             )
                         else:
-                            
                             val_out = self.model(
                                 pos=val_batch.pos.to(self.device),
                                 z=val_batch.z.to(self.device),
                                 batch=val_batch.batch.to(self.device)
                             )
-                            
-                        full_val_loss = self.loss_function(val_out.reshape(val_target.shape), val_target).item()
+                    
+
+                        # Scale the output
+                        if std is not None:
+                            print("val_out.shape", val_out.shape)
+                            val_out = (val_out*std).to(self.device)          # keep graph, no warning
+                        
+                        val_out_phys = val_out.reshape(val_target.shape)
+
+                        full_val_loss = self.loss_function(val_out_phys, val_target).item()
                         running_val_loss_full += full_val_loss
                         val_count += 1
 
                         if epoch%10== 0:
-                            val_emd_loss +=  loss_emd_per_spectrum(val_out, val_target.reshape(val_out.shape), S=62)
-                            val_R2_v += R2(val_out.reshape(val_target.shape), val_target).item()
+                            val_R2_v += R2(val_out_phys, val_target).item()
+                            val_emd_loss += loss_emd(val_out_phys, val_target)
 
+                            if targ == 'imag':
+                                running_val_mse_imag += l2loss(val_out_phys, val_target).item()
+
+                            elif targ == 'real':
+                                running_val_mse_real += l2loss(val_out_phys, val_target).item()
+
+                            else:
+                                pass
+                                #running_mse_real += l2loss(val_out_phys, val_target).item()
+                                #running_mse_imag += l2loss(val_out_phys, val_target).item()
 
 
                 self.model.train()
-                print("val_count", val_count)
 
                 # Average val metrics
                 avg_val_loss = running_val_loss_full / val_count
+
+                # Log
+                wandb.log({
+                    "epoch": epoch,
+                    "epoch_val_loss": avg_val_loss})
+
 
                 if epoch%10== 0:
                     avg_val_R = val_R2_v / val_count
@@ -195,11 +203,6 @@ class Trainer:
                 self.val_losses.append(avg_val_loss)
                 # Step the scheduler on the validation loss
                 self.scheduler.step(avg_val_loss)
-
-                # Log
-                wandb.log({
-                    "epoch": epoch,
-                    "epoch_val_loss": avg_val_loss})
 
 
                 print(f"Epoch {epoch+1}/{num_train}: "
