@@ -122,7 +122,7 @@ class Trainer:
                 num_batches += 1
 
                 if epoch % 10 == 0:
-                    running_emd_loss += loss_emd_per_spectrum(out, target.reshape(out.shape), S=62) 
+                    running_emd_loss += loss_emd_per_spectrum(out, target.reshape(out.shape), S=61) 
 
 
             # Compute average training loss for epoch
@@ -171,7 +171,7 @@ class Trainer:
                         val_count += 1
 
                         if epoch%10== 0:
-                            val_emd_loss +=  loss_emd_per_spectrum(val_out, val_target.reshape(val_out.shape), S=62)
+                            val_emd_loss +=  loss_emd_per_spectrum(val_out, val_target.reshape(val_out.shape), S=61)
                             val_R2_v += R2(val_out.reshape(val_target.shape), val_target).item()
 
 

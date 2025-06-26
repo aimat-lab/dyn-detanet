@@ -23,11 +23,11 @@ num_features=128
 attention_head=32
 num_radial=32
 
-scalar_outsize= (4* 62)
-irreps_out= '124x2e' #'124x1e + 124x2e'
+scalar_outsize= (4* 61)
+irreps_out= '122x2e'
 out_type = 'multi_tensor'
 target = 'y'
-dataset_name = 'KITQM9'
+dataset_name = 'QM9SPol'
 x_features = 0
 dropout = 0.2
 
@@ -55,37 +55,13 @@ print("dataset[5] :", ex2,)
 
 # Subtract static polarizability
 for data in dataset:
-    #data.real_ee = data.real_ee[1:] - data.real_ee[0]
-    #data.imag_ee = data.imag_ee[1:] # Imaginary part is 0 anyways
+    data.real_ee = data.real_ee[1:] - data.real_ee[0]
+    data.imag_ee = data.imag_ee[1:] # Imaginary part at freq 0 is 0 anyways
 
     data.y = torch.cat([data.real_ee, data.imag_ee], dim=0)
 
-    if x_features == 62:
-        data.x = data.spectra.repeat(len(data.z), 1)
-
     if x_features == 61:
         data.x = data.spectra[1:].repeat(len(data.z), 1)
-
-    if x_features == 241:
-        data.x = data.spectra[1:].repeat(len(data.z), 1)
-
-    elif x_features == 305:
-        line_shapes= ut.load_spectra(data.osc_pos, data.osc_strength, fun_type="l", width_param=0.025)
-
-        pol_freqs_arr = np.linspace(1.5, 6.5, num=305)  # 61 * 4
-        # Evaluate each partial-lorentz (or partial-gauss) at these frequencies & sum
-        broadened_vals = np.zeros_like(pol_freqs_arr)
-        for line_func in line_shapes:
-            broadened_vals += line_func(pol_freqs_arr)
-        
-        broadened_vals = torch.tensor(broadened_vals, dtype=torch.float32)
-        print("broadened_vals", broadened_vals.shape)
-        data.x = broadened_vals.repeat(len(data.z), 1)
-    elif x_features == 30:
-        x = torch.cat([data.osc_pos, data.osc_strength], dim= 0)
-        data.x = x.repeat(len(data.z), 1)
-
-
 
 
 # -------------------------------
@@ -162,7 +138,7 @@ trainer_ = trainer.Trainer(
     model,
     train_loader=trainloader,
     val_loader=valloader,
-    loss_function=l2loss, #ut.fun_complex_multidimensional_loss, 
+    loss_function=l2loss, 
     lr=lr,
     weight_decay=0,
     optimizer='AdamW'

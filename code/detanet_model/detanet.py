@@ -111,6 +111,13 @@ class DetaNet(nn.Module):
     quadrupole moments).' 3_tensor':3rd order tensor (e.g. first hyperpolarizablity).' R2':electronic spatial extent.
     'latent':direct output of scalar and tensor features after interacting layers. Other: direct output of
     scalar_outsize dimension and irrep tensor for irrep_out dimension. Default is 'scalar'
+    multi_tensor: multi-tensor, with N X [3x3] tensors (for dynamic polarizability)
+
+    x_features:int, the number of additional features to be added per atom.
+    If x_features is not 0, an additional feature vector of size x_feature (added in the training loop) will be 
+    concatenated with the initial scalar embedding.
+    To use this as a global molecule feature, repeat the feature vector for each atom in the molecule.
+
 
     grad_type:Type of derivative property, derivatives of 3 energies: 'force':atomic force, 'Hi':atomic part of Hessian
     matrix, 'Hij' interatomic part of Hessian matrix. For these 3 kinds, out_type must be 'scalar'.

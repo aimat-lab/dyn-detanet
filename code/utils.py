@@ -100,22 +100,16 @@ def undo_spectrum_scaling_full(flat: torch.Tensor,
     if N % 124 != 0:
         raise ValueError(f"First dim must be a multiple of 124, got {N}")
     B = N // 124
-
-    print("B", B)
-
+    
     # 1) Recover the [B, 124, 3, 3] structure
     ts = flat.view(B, 124, 3, 3)
 
     # 2) Flatten the last two dims → [B, 124*9]
     ts9 = ts.view(B, 124 * 9)
 
-    print("ts9.shape", ts9.shape)
-
     # 3) Inverse-standardise:  r = z*σ + μ
     mu    = torch.as_tensor(scaler.mean_,  device=ts9.device, dtype=ts9.dtype)  # [124*9]
     sigma = torch.as_tensor(scaler.scale_, device=ts9.device, dtype=ts9.dtype)  # [124*9]
-    print("mu.shape", mu.shape)
-    print("sigma.shape", sigma.shape)
     phys9 = ts9 * sigma + mu                                                       # [B, 124*9]
 
     # 4) Un-flatten back to [B, 124, 3, 3]
